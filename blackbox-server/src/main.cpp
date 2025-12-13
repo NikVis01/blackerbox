@@ -456,35 +456,52 @@ std::string createDetailedResponse(const DetailedVRAMInfo& info) {
 }
 
 void handleStreamingRequest(tcp::socket& socket) {
-    http::response<http::string_body> res;
-    res.result(http::status::ok);
-    res.set(http::field::content_type, "text/event-stream");
-    res.set(http::field::cache_control, "no-cache");
-    res.set(http::field::connection, "keep-alive");
-    res.body() = "";
-    res.prepare_payload();
-    http::write(socket, res);
-    
-    while (true) {
-        try {
-            DetailedVRAMInfo info = getDetailedVRAMUsage();
-            std::string json = createDetailedResponse(info);
-            
-            std::ostringstream event;
-            event << "data: " << json << "\n\n";
-            
-            http::response<http::string_body> chunk;
-            chunk.result(http::status::ok);
-            chunk.set(http::field::content_type, "text/event-stream");
-            chunk.body() = event.str();
-            chunk.prepare_payload();
-            
-            http::write(socket, chunk);
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        } catch (...) {
-            break;
+    try {
+        http::response<http::string_body> res;
+        res.result(http::status::ok);
+        res.set(http::field::content_type, "text/event-stream");
+        res.set(http::field::cache_control, "no-cache");
+        res.set(http::field::connection, "keep-alive");
+        res.body() = "";
+        res.prepare_payload();
+        http::write(socket, res);
+        
+        while (true) {
+            try {
+                DetailedVRAMInfo info = getDetailedVRAMUsage();
+                std::string json = createDetailedResponse(info);
+                
+                std::ostringstream event;
+                event << "data: " << json << "\n\n";
+                
+                http::response<http::string_body> chunk;
+                chunk.result(http::status::ok);
+                chunk.set(http::field::content_type, "text/event-stream");
+                chunk.body() = event.str();
+                chunk.prepare_payload();
+                
+                http::write(socket, chunk);
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            } catch (const boost::system::system_error& e) {
+                // Client disconnected during streaming
+                if (e.code() == boost::asio::error::broken_pipe || 
+                    e.code() == boost::asio::error::connection_reset ||
+                    e.code() == boost::asio::error::eof) {
+                    break;
+                }
+                throw; // Re-throw other errors
+            } catch (const boost::beast::system_error& e) {
+                // Beast-specific connection errors
+                if (e.code() == boost::beast::http::error::end_of_stream ||
+                    e.code() == boost::asio::error::eof) {
+                    break;
+                }
+                throw;
+            }
         }
+    } catch (...) {
+        // Client disconnected, exit silently
     }
 }
 
@@ -526,22 +543,38 @@ void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
 void acceptConnections(tcp::acceptor& acceptor) {
     while (true) {
         try {
-        tcp::socket socket(acceptor.get_executor());
-        acceptor.accept(socket);
-        
-        beast::flat_buffer buffer;
-        http::request<http::string_body> req;
-        http::read(socket, buffer, req);
-        handleRequest(req, socket);
+            tcp::socket socket(acceptor.get_executor());
+            acceptor.accept(socket);
+            
+            beast::flat_buffer buffer;
+            http::request<http::string_body> req;
+            http::read(socket, buffer, req);
+            handleRequest(req, socket);
         } catch (const boost::system::system_error& e) {
-            // Handle broken pipe and other connection errors gracefully
+            // Handle connection errors gracefully - client disconnected
             if (e.code() == boost::asio::error::broken_pipe || 
-                e.code() == boost::asio::error::connection_reset) {
-                // Client disconnected, continue to next connection
+                e.code() == boost::asio::error::connection_reset ||
+                e.code() == boost::asio::error::eof ||
+                e.code() == boost::beast::http::error::end_of_stream) {
+                // Client disconnected, continue to next connection (silent)
                 continue;
             }
+            // Only log non-connection errors
             std::cerr << "Connection error: " << e.what() << std::endl;
+        } catch (const boost::beast::system_error& e) {
+            // Handle Beast-specific errors (like end_of_stream)
+            if (e.code() == boost::beast::http::error::end_of_stream ||
+                e.code() == boost::asio::error::eof) {
+                continue; // Client disconnected, continue silently
+            }
+            std::cerr << "Beast error: " << e.what() << std::endl;
         } catch (const std::exception& e) {
+            // Check if it's an end of stream message
+            std::string err_msg = e.what();
+            if (err_msg.find("end of stream") != std::string::npos ||
+                err_msg.find("end_of_stream") != std::string::npos) {
+                continue; // Client disconnected, continue silently
+            }
             std::cerr << "Error handling request: " << e.what() << std::endl;
         }
     }
