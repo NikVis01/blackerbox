@@ -6,14 +6,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# Download Boost (headers + minimal build for system library)
+# Download Boost headers (full release with all headers)
 FetchContent_Declare(
     boost
-    URL https://github.com/boostorg/boost/releases/download/boost-1.84.0/boost-1.84.0.tar.gz
+    URL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.gz
+    URL_HASH SHA256=cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c6828c494d6c7876591d8d98a
 )
-set(BOOST_INCLUDE_LIBRARIES system)
-set(BOOST_ENABLE_CMAKE ON)
-FetchContent_MakeAvailable(boost)
+FetchContent_GetProperties(boost)
+if(NOT boost_POPULATED)
+    FetchContent_Populate(boost)
+    # Build only system library (required by asio)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E chdir ${boost_SOURCE_DIR} ./bootstrap.sh --with-libraries=system
+        WORKING_DIRECTORY ${boost_SOURCE_DIR}
+    )
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E chdir ${boost_SOURCE_DIR} ./b2 --with-system --prefix=${CMAKE_BINARY_DIR}/boost_install variant=release link=static threading=multi
+        WORKING_DIRECTORY ${boost_SOURCE_DIR}
+    )
+endif()
 
 # Download Abseil (header-only)
 FetchContent_Declare(
@@ -56,9 +67,12 @@ target_include_directories(blackbox-server PRIVATE
     ${abseil_SOURCE_DIR}
 )
 
+target_link_directories(blackbox-server PRIVATE
+    ${CMAKE_BINARY_DIR}/boost_install/lib
+)
+
 target_link_libraries(blackbox-server
-    Boost::system
-    Boost::headers
+    boost_system
     absl::strings
 )
 
