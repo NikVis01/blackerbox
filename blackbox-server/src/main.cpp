@@ -118,11 +118,12 @@ NsightMetrics getNsightMetrics(unsigned int pid);
 struct VLLMBlockData {
     unsigned int num_gpu_blocks;
     unsigned long long block_size;
+    double kv_cache_usage_perc;  // KV cache usage percentage (0.0-1.0)
     bool available;
 };
 
 VLLMBlockData fetchVLLMBlockData() {
-    VLLMBlockData data{0, 0, false};
+    VLLMBlockData data{0, 0, 0.0, false};
     
     // Try to fetch from vLLM metrics endpoint
     FILE* curl = popen("curl -s --max-time 1 http://localhost:8000/metrics 2>/dev/null", "r");
@@ -165,9 +166,35 @@ VLLMBlockData fetchVLLMBlockData() {
                         if (std::isdigit(c)) digits += c;
                     }
                     if (!digits.empty()) {
-                        // block_size is in tokens, convert to bytes (approximate: 2 bytes per token for KV cache)
-                        unsigned int tokens_per_block = std::stoi(digits);
-                        data.block_size = tokens_per_block * 2; // Rough estimate, actual depends on model
+                        // block_size="16" is tokens per block, but actual memory block size is ~16KB
+                        // vLLM uses fixed-size blocks for KV cache (typically 16KB regardless of token count)
+                        // We ignore the token count and use the standard vLLM block size
+                        // (The token count is for logical organization, not physical memory size)
+                    }
+                }
+            }
+        }
+        
+        // Parse kv_cache_usage_perc from vLLM metrics (separate metric, not in cache_config_info)
+        // Format: vllm:kv_cache_usage_perc{engine="0",model_name="..."} 0.0
+        size_t kv_usage_pos = line_str.find("vllm:kv_cache_usage_perc");
+        if (kv_usage_pos != std::string::npos) {
+            // Find the value after the closing brace
+            size_t brace_end = line_str.find("}", kv_usage_pos);
+            if (brace_end != std::string::npos) {
+                size_t value_start = line_str.find_first_not_of(" \t", brace_end + 1);
+                if (value_start != std::string::npos) {
+                    size_t value_end = line_str.find_first_of(" \n", value_start);
+                    if (value_end != std::string::npos) {
+                        std::string value_str = line_str.substr(value_start, value_end - value_start);
+                        try {
+                            data.kv_cache_usage_perc = std::stod(value_str);
+                            // vLLM returns 0-1 range, ensure it's in that range
+                            if (data.kv_cache_usage_perc < 0.0) data.kv_cache_usage_perc = 0.0;
+                            if (data.kv_cache_usage_perc > 1.0) data.kv_cache_usage_perc = 1.0;
+                        } catch (...) {
+                            data.kv_cache_usage_perc = 0.0;
+                        }
                     }
                 }
             }
@@ -178,12 +205,11 @@ VLLMBlockData fetchVLLMBlockData() {
     
     if (data.num_gpu_blocks > 0) {
         data.available = true;
-        if (data.block_size == 0) {
-            // Default block size if not provided (typical vLLM block size is 16KB for KV cache)
-            data.block_size = 16 * 1024; // 16KB default
-        }
+        // Block size will be calculated from actual GPU memory usage in getDetailedVRAMUsage()
+        // This is just a fallback default
+        data.block_size = 16 * 1024; // 16KB fallback (will be overridden by calculation)
         std::cout << "[DEBUG] vLLM blocks: num_gpu_blocks=" << data.num_gpu_blocks 
-                  << ", block_size=" << data.block_size << " bytes" << std::endl;
+                  << ", kv_cache_usage=" << (data.kv_cache_usage_perc * 100.0) << "%" << std::endl;
     } else {
         std::cout << "[DEBUG] vLLM block data not available" << std::endl;
     }
@@ -262,14 +288,35 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
     VLLMBlockData vllm_blocks = fetchVLLMBlockData();
     if (vllm_blocks.available) {
         detailed.active_blocks = vllm_blocks.num_gpu_blocks;
-        detailed.free_blocks = 0; // vLLM doesn't expose free blocks count
+        // free_blocks will be calculated after we determine utilization
+        
+        // Calculate block size from NVML GPU memory data (not hardcoded)
+        // Block size = process GPU memory / number of blocks
+        // This gives actual GPU memory allocation per block from NVIDIA APIs
+        unsigned long long calculated_block_size = vllm_blocks.block_size; // Default fallback
+        for (const auto& pm : detailed.processes) {
+            // Find vLLM process
+            if (pm.name.find("python") != std::string::npos || 
+                pm.name.find("vllm") != std::string::npos ||
+                pm.name.find("VLLM") != std::string::npos) {
+                // Calculate from actual NVML GPU memory allocation
+                if (vllm_blocks.num_gpu_blocks > 0 && pm.used_bytes > 0) {
+                    calculated_block_size = pm.used_bytes / vllm_blocks.num_gpu_blocks;
+                    std::cout << "[DEBUG] Block size from NVML GPU memory: " 
+                              << calculated_block_size << " bytes (process: " 
+                              << pm.used_bytes << " bytes / " 
+                              << vllm_blocks.num_gpu_blocks << " blocks)" << std::endl;
+                }
+                break;
+            }
+        }
         
         // Populate blocks array with allocated blocks
         for (unsigned int i = 0; i < vllm_blocks.num_gpu_blocks; ++i) {
             MemoryBlock block;
             block.block_id = i;
             block.address = 0; // vLLM doesn't expose addresses
-            block.size = vllm_blocks.block_size;
+            block.size = calculated_block_size; // Use calculated size from GPU memory
             block.type = "kv_cache"; // vLLM blocks are primarily KV cache
             block.allocated = true;
             block.utilized = false; // Will be set by Nsight Compute metrics below
@@ -281,22 +328,31 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
         detailed.free_blocks = 0;
     }
     
-    // Now mark blocks as utilized based on Nsight Compute metrics (if blocks were populated)
-    if (!detailed.blocks.empty()) {
-        // Find vLLM process and use its Nsight metrics for utilization
-        for (const auto& [pid, nsight] : detailed.nsight_metrics) {
-            if (nsight.available && (nsight.dram_read_bytes > 0 || nsight.dram_write_bytes > 0)) {
-                // Estimate utilized blocks based on memory activity
-                unsigned int estimated_utilized = detailed.active_blocks > 0 ? 
-                    std::min(detailed.active_blocks, 
-                            static_cast<unsigned int>(detailed.active_blocks * 0.8)) : 0;
-                
-                for (size_t j = 0; j < detailed.blocks.size() && j < estimated_utilized; ++j) {
-                    detailed.blocks[j].utilized = true;
-                }
-                break; // Use first available Nsight metrics
-            }
+    // Mark blocks as utilized based on vLLM's kv_cache_usage_perc (accurate, from vLLM's internal state)
+    unsigned int utilized_count = 0;
+    if (!detailed.blocks.empty() && vllm_blocks.available) {
+        // Calculate actual utilized blocks from vLLM's kv_cache_usage_perc
+        // This is the real utilization from vLLM's block manager, not an estimate
+        unsigned int actual_utilized = static_cast<unsigned int>(
+            vllm_blocks.num_gpu_blocks * vllm_blocks.kv_cache_usage_perc + 0.5  // Round to nearest
+        );
+        
+        // Ensure we don't exceed allocated blocks
+        actual_utilized = std::min(actual_utilized, detailed.active_blocks);
+        
+        // Mark blocks as utilized
+        for (size_t j = 0; j < detailed.blocks.size() && j < actual_utilized; ++j) {
+            detailed.blocks[j].utilized = true;
+            utilized_count++;
         }
+        
+        std::cout << "[DEBUG] Block utilization: " << utilized_count << " / " << detailed.active_blocks 
+                  << " blocks utilized (" << (vllm_blocks.kv_cache_usage_perc * 100.0) << "%)" << std::endl;
+    }
+    
+    // Calculate free blocks: allocated but not utilized
+    if (detailed.active_blocks > 0) {
+        detailed.free_blocks = detailed.active_blocks - utilized_count;
     }
 
     // Set atomic allocations to sum of all process memory allocations from NVML
@@ -347,8 +403,8 @@ NsightMetrics getNsightMetrics(unsigned int pid) {
     // We'll use a lightweight query approach
     std::string cmd = absl::StrCat(
         "timeout 2 ncu --target-processes ", pid,
-        " --metrics sm__sass_thread_inst_executed_op_atom_pred_on.sum,sm__thread_inst_executed.sum,sm__warps_active.avg.pct_of_peak_sustained_active",
-        " --print-gpu-trace --csv 2>/dev/null | tail -20"
+        " --metrics sm__sass_thread_inst_executed_op_atom_pred_on.sum,sm__thread_inst_executed.sum,sm__warps_active.avg.pct_of_peak_sustained_active,dram__bytes_read.sum,dram__bytes_write.sum",
+        " --print-gpu-trace --csv 2>/dev/null | tail -30"
     );
     
     FILE* ncu_output = popen(cmd.c_str(), "r");
@@ -384,6 +440,24 @@ NsightMetrics getNsightMetrics(unsigned int pid) {
             if (last_space != std::string::npos) {
                 try {
                     metrics.occupancy = std::stod(line_str.substr(last_space + 1));
+                } catch (...) {}
+            }
+        }
+        // Parse DRAM read bytes
+        if (line_str.find("dram__bytes_read") != std::string::npos) {
+            size_t last_space = line_str.find_last_of(" \t,");
+            if (last_space != std::string::npos) {
+                try {
+                    metrics.dram_read_bytes = std::stoull(line_str.substr(last_space + 1));
+                } catch (...) {}
+            }
+        }
+        // Parse DRAM write bytes
+        if (line_str.find("dram__bytes_write") != std::string::npos) {
+            size_t last_space = line_str.find_last_of(" \t,");
+            if (last_space != std::string::npos) {
+                try {
+                    metrics.dram_write_bytes = std::stoull(line_str.substr(last_space + 1));
                 } catch (...) {}
             }
         }
