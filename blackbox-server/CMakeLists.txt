@@ -46,7 +46,7 @@ if(NOT boost_POPULATED)
     )
 endif()
 
-# Download Abseil (header-only)
+# Download Abseil
 FetchContent_Declare(
     abseil
     GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
@@ -84,7 +84,6 @@ add_executable(blackbox-server src/main.cpp)
 
 target_include_directories(blackbox-server PRIVATE
     ${boost_SOURCE_DIR}
-    ${abseil_SOURCE_DIR}
 )
 
 target_link_directories(blackbox-server PRIVATE
@@ -93,6 +92,8 @@ target_link_directories(blackbox-server PRIVATE
 
 target_link_libraries(blackbox-server
     boost_system
+    absl::strings
+    absl::str_format_internal
 )
 
 if(NVML_LIB)
