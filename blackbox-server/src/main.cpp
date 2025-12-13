@@ -488,7 +488,15 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
 
 // Get Nsight Compute metrics for a specific PID using ncu CLI
 NsightMetrics getNsightMetrics(unsigned int pid) {
-    NsightMetrics metrics = {0, 0, 0, 0, 0.0, false};
+    NsightMetrics metrics{};
+    metrics.atomic_operations = 0;
+    metrics.threads_per_block = 0;
+    metrics.occupancy = 0.0;
+    metrics.active_blocks = 0;
+    metrics.memory_throughput = 0;
+    metrics.dram_read_bytes = 0;
+    metrics.dram_write_bytes = 0;
+    metrics.available = false;
     
     // Check if ncu is available
     FILE* ncu_check = popen("which ncu > /dev/null 2>&1", "r");
