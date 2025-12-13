@@ -295,41 +295,65 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
     
     while (std::getline(iss, line)) {
         if (line.find("cache_config_info") != std::string::npos) {
-            std::cout << "[DEBUG] Found cache_config_info line (first 200 chars): " 
-                      << line.substr(0, 200) << std::endl;
+            std::cout << "[DEBUG] Found cache_config_info line (full line): " << line << std::endl;
             
-            // Find num_gpu_blocks="14401"
-            size_t num_start = line.find("num_gpu_blocks=\"");
+            // Find num_gpu_blocks="14401" - search for the pattern more carefully
+            std::string num_pattern = "num_gpu_blocks=\"";
+            size_t num_start = line.find(num_pattern);
             if (num_start != std::string::npos) {
-                num_start += 15; // Skip past "num_gpu_blocks=\""
+                num_start += num_pattern.length(); // Skip past "num_gpu_blocks=\""
                 size_t num_end = line.find("\"", num_start);
                 if (num_end != std::string::npos) {
+                    std::string num_str = line.substr(num_start, num_end - num_start);
+                    std::cout << "[DEBUG] Extracted num_gpu_blocks string: '" << num_str << "'" << std::endl;
                     try {
-                        std::string num_str = line.substr(num_start, num_end - num_start);
                         num_gpu_blocks = std::stoi(num_str);
-                        std::cout << "[DEBUG] Parsed num_gpu_blocks=" << num_gpu_blocks 
-                                  << " from string: " << num_str << std::endl;
+                        std::cout << "[DEBUG] Successfully parsed num_gpu_blocks=" << num_gpu_blocks << std::endl;
                     } catch (const std::exception& e) {
-                        std::cout << "[DEBUG] Failed to parse num_gpu_blocks: " << e.what() << std::endl;
+                        std::cout << "[DEBUG] Failed to parse num_gpu_blocks from '" << num_str 
+                                  << "': " << e.what() << std::endl;
+                        // Try to find any number in the string
+                        size_t first_digit = num_str.find_first_of("0123456789");
+                        if (first_digit != std::string::npos) {
+                            size_t last_digit = num_str.find_last_of("0123456789");
+                            if (last_digit != std::string::npos) {
+                                try {
+                                    std::string cleaned = num_str.substr(first_digit, last_digit - first_digit + 1);
+                                    num_gpu_blocks = std::stoi(cleaned);
+                                    std::cout << "[DEBUG] Retry parsed num_gpu_blocks=" << num_gpu_blocks 
+                                              << " from cleaned string: '" << cleaned << "'" << std::endl;
+                                } catch (...) {}
+                            }
+                        }
                     }
+                } else {
+                    std::cout << "[DEBUG] Could not find closing quote for num_gpu_blocks" << std::endl;
                 }
+            } else {
+                std::cout << "[DEBUG] Could not find num_gpu_blocks=\" pattern in line" << std::endl;
             }
             
             // Find block_size="16"
-            size_t size_start = line.find("block_size=\"");
+            std::string size_pattern = "block_size=\"";
+            size_t size_start = line.find(size_pattern);
             if (size_start != std::string::npos) {
-                size_start += 12; // Skip past "block_size=\""
+                size_start += size_pattern.length(); // Skip past "block_size=\""
                 size_t size_end = line.find("\"", size_start);
                 if (size_end != std::string::npos) {
+                    std::string size_str = line.substr(size_start, size_end - size_start);
+                    std::cout << "[DEBUG] Extracted block_size string: '" << size_str << "'" << std::endl;
                     try {
-                        std::string size_str = line.substr(size_start, size_end - size_start);
                         block_size = std::stoi(size_str);
-                        std::cout << "[DEBUG] Parsed block_size=" << block_size 
-                                  << " from string: " << size_str << std::endl;
+                        std::cout << "[DEBUG] Successfully parsed block_size=" << block_size << std::endl;
                     } catch (const std::exception& e) {
-                        std::cout << "[DEBUG] Failed to parse block_size: " << e.what() << std::endl;
+                        std::cout << "[DEBUG] Failed to parse block_size from '" << size_str 
+                                  << "': " << e.what() << std::endl;
                     }
+                } else {
+                    std::cout << "[DEBUG] Could not find closing quote for block_size" << std::endl;
                 }
+            } else {
+                std::cout << "[DEBUG] Could not find block_size=\" pattern in line" << std::endl;
             }
         }
         
