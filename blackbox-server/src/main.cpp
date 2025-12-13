@@ -3,7 +3,8 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
 #include <nvml.h>
-#include <absl/strings/str_format.h>
+#include <sstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -45,11 +46,14 @@ VRAMInfo getVRAMUsage() {
 }
 
 std::string createResponse(const VRAMInfo& info) {
-    return absl::StrFormat(
-        R"({"total_bytes":%llu,"used_bytes":%llu,"free_bytes":%llu,"used_percent":%.2f})",
-        info.total, info.used, info.free,
-        info.total > 0 ? (100.0 * info.used / info.total) : 0.0
-    );
+    std::ostringstream oss;
+    double usedPercent = info.total > 0 ? (100.0 * info.used / info.total) : 0.0;
+    oss << R"({"total_bytes":)" << info.total
+        << R"(,"used_bytes":)" << info.used
+        << R"(,"free_bytes":)" << info.free
+        << R"(,"used_percent":)" << std::fixed << std::setprecision(2) << usedPercent
+        << "}";
+    return oss.str();
 }
 
 void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {

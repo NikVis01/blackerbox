@@ -89,8 +89,6 @@ target_link_directories(blackbox-server PRIVATE
 
 target_link_libraries(blackbox-server
     boost_system
-    absl::strings
-    absl::str_format_internal
 )
 
 if(NVML_LIB)
