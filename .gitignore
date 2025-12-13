@@ -7,3 +7,4 @@ build/
 *_key.pub
 connect.sh
 hf_token
+**/run_qwen.sh
