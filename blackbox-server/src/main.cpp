@@ -218,7 +218,15 @@ std::string fetchVLLMMetrics(const std::string& vllm_url = "http://localhost:800
 void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
     if (metrics.empty()) return;
     
-    std::istringstream iss(metrics);
+    // Handle JSON-escaped newlines
+    std::string unescaped_metrics = metrics;
+    size_t pos = 0;
+    while ((pos = unescaped_metrics.find("\\n", pos)) != std::string::npos) {
+        unescaped_metrics.replace(pos, 2, "\n");
+        pos += 1;
+    }
+    
+    std::istringstream iss(unescaped_metrics);
     std::string line;
     int num_gpu_blocks = 0;
     int block_size = 16;
@@ -228,24 +236,28 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
     
     while (std::getline(iss, line)) {
         if (line.find("cache_config_info") != std::string::npos) {
+            // Find num_gpu_blocks="14401"
             size_t num_start = line.find("num_gpu_blocks=\"");
             if (num_start != std::string::npos) {
-                num_start += 15;
+                num_start += 15; // Skip past "num_gpu_blocks=\""
                 size_t num_end = line.find("\"", num_start);
                 if (num_end != std::string::npos) {
                     try {
-                        num_gpu_blocks = std::stoi(line.substr(num_start, num_end - num_start));
+                        std::string num_str = line.substr(num_start, num_end - num_start);
+                        num_gpu_blocks = std::stoi(num_str);
                     } catch (...) {}
                 }
             }
             
+            // Find block_size="16"
             size_t size_start = line.find("block_size=\"");
             if (size_start != std::string::npos) {
-                size_start += 12;
+                size_start += 12; // Skip past "block_size=\""
                 size_t size_end = line.find("\"", size_start);
                 if (size_end != std::string::npos) {
                     try {
-                        block_size = std::stoi(line.substr(size_start, size_end - size_start));
+                        std::string size_str = line.substr(size_start, size_end - size_start);
+                        block_size = std::stoi(size_str);
                     } catch (...) {}
                 }
             }
