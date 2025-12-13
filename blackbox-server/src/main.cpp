@@ -17,6 +17,8 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
 
@@ -46,18 +48,34 @@ struct ThreadInfo {
     std::string state;
 };
 
+struct NsightMetrics {
+    unsigned long long atomic_operations;
+    unsigned long long threads_per_block;
+    unsigned long long blocks_per_sm;
+    unsigned long long shared_memory_usage;
+    double occupancy;
+    bool available;
+};
+
 struct DetailedVRAMInfo {
     unsigned long long total;
     unsigned long long used;
     unsigned long long free;
     unsigned long long reserved;
+    // Note: blocks are vLLM KV cache blocks (application-level), not GPU CUDA blocks
     std::vector<MemoryBlock> blocks;
+    // Process-level VRAM usage from NVML (system-level monitoring)
     std::vector<ProcessMemory> processes;
+    // Note: threads are application-level request threads from vLLM, not GPU CUDA threads
+    // For GPU thread/block/atomic metrics, use NVIDIA Nsight Compute (NCU) profiler
     std::vector<ThreadInfo> threads;
-    unsigned int active_blocks;
-    unsigned int free_blocks;
+    unsigned int active_blocks;  // vLLM KV cache blocks
+    unsigned int free_blocks;    // vLLM KV cache blocks
+    // Atomic allocations: sum of all process memory from NVML
     unsigned long long atomic_allocations;
     double fragmentation_ratio;
+    // Nsight Compute metrics per process (keyed by PID)
+    std::map<unsigned int, NsightMetrics> nsight_metrics;
 };
 
 struct VRAMInfo {
@@ -96,6 +114,8 @@ void shutdownNVML() {
 }
 
 void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info);
+NsightMetrics getNsightMetrics(unsigned int pid);
+NsightMetrics getNsightMetrics(unsigned int pid);
 
 VRAMInfo getVRAMUsage() {
     VRAMInfo info = {0, 0, 0};
@@ -111,6 +131,24 @@ VRAMInfo getVRAMUsage() {
     return info;
 }
 
+// Get detailed VRAM usage combining NVML (system-level) and vLLM metrics (application-level)
+// 
+// NVML Limitations (what we CANNOT get):
+// - Per-thread GPU metrics (CUDA threads)
+// - Per-block GPU metrics (CUDA blocks)  
+// - Atomic operation counts
+// - Shared memory bank conflicts
+// - Instruction mix
+// 
+// For detailed GPU performance metrics, use NVIDIA Nsight Compute (NCU) profiler
+// 
+// What we CAN get from NVML:
+// - Total/used/free VRAM (system-level)
+// - Process-level VRAM usage by PID
+// 
+// What we get from vLLM metrics:
+// - KV cache block counts (application-level memory blocks)
+// - Request counts (application-level threads)
 DetailedVRAMInfo getDetailedVRAMUsage(const std::string& vllm_metrics = "") {
     DetailedVRAMInfo detailed = {0, 0, 0, 0, {}, {}, {}, 0, 0, 0, 0.0};
     if (!initNVML()) return detailed;
@@ -125,12 +163,17 @@ DetailedVRAMInfo getDetailedVRAMUsage(const std::string& vllm_metrics = "") {
 
     unsigned int processCount = 64;
     nvmlProcessInfo_t processes[64];
+    unsigned long long total_atomic_allocations = 0;
+    
     if (nvmlDeviceGetComputeRunningProcesses(g_device, &processCount, processes) == NVML_SUCCESS) {
         for (unsigned int i = 0; i < processCount; ++i) {
             ProcessMemory pm;
             pm.pid = processes[i].pid;
             pm.used_bytes = processes[i].usedGpuMemory;
             pm.reserved_bytes = processes[i].usedGpuMemory;
+            
+            // Sum up all process memory allocations (atomic allocations per process)
+            total_atomic_allocations += processes[i].usedGpuMemory;
             
             char name[256] = {0};
             FILE* fp = fopen(absl::StrCat("/proc/", pm.pid, "/comm").c_str(), "r");
@@ -145,16 +188,27 @@ DetailedVRAMInfo getDetailedVRAMUsage(const std::string& vllm_metrics = "") {
                 pm.name = "unknown";
             }
             detailed.processes.push_back(pm);
+            
+            // Get Nsight Compute metrics for this PID
+            NsightMetrics nsight = getNsightMetrics(pm.pid);
+            if (nsight.available) {
+                detailed.nsight_metrics[pm.pid] = nsight;
+            }
         }
     }
+
+    // Set atomic allocations to sum of all process memory allocations from NVML
+    // This represents the total memory allocated atomically by all processes
+    detailed.atomic_allocations = total_atomic_allocations > 0 ? total_atomic_allocations : detailed.used;
 
     // Default values (will be overridden by vLLM if available)
     detailed.active_blocks = detailed.processes.size();
     detailed.free_blocks = 0;
-    detailed.atomic_allocations = detailed.used;
     detailed.fragmentation_ratio = detailed.total > 0 ? 
         (1.0 - (double)detailed.free / detailed.total) : 0.0;
 
+    // Create thread info from processes (application-level, not GPU CUDA threads)
+    // NVML only provides process-level VRAM usage, not per-thread GPU metrics
     for (size_t i = 0; i < detailed.processes.size(); ++i) {
         ThreadInfo ti;
         ti.thread_id = i;
@@ -344,6 +398,76 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
     }
 }
 
+// Get Nsight Compute metrics for a specific PID using ncu CLI
+NsightMetrics getNsightMetrics(unsigned int pid) {
+    NsightMetrics metrics = {0, 0, 0, 0, 0.0, false};
+    
+    // Check if ncu is available
+    FILE* ncu_check = popen("which ncu > /dev/null 2>&1", "r");
+    if (!ncu_check) {
+        return metrics;
+    }
+    int ncu_available = pclose(ncu_check);
+    if (ncu_available != 0) {
+        return metrics;  // ncu not found
+    }
+    
+    // Use ncu to get metrics for the process
+    // Note: ncu --target-processes requires the process to be running CUDA kernels
+    // We'll use a lightweight query approach
+    std::string cmd = absl::StrCat(
+        "timeout 2 ncu --target-processes ", pid,
+        " --metrics sm__sass_thread_inst_executed_op_atom_pred_on.sum,sm__thread_inst_executed.sum,sm__warps_active.avg.pct_of_peak_sustained_active",
+        " --print-gpu-trace --csv 2>/dev/null | tail -20"
+    );
+    
+    FILE* ncu_output = popen(cmd.c_str(), "r");
+    if (!ncu_output) {
+        return metrics;
+    }
+    
+    char line[1024];
+    while (fgets(line, sizeof(line), ncu_output)) {
+        std::string line_str(line);
+        // Parse ncu output for atomic operations
+        if (line_str.find("sm__sass_thread_inst_executed_op_atom") != std::string::npos) {
+            // Extract numeric value
+            size_t last_space = line_str.find_last_of(" \t,");
+            if (last_space != std::string::npos) {
+                try {
+                    metrics.atomic_operations = std::stoull(line_str.substr(last_space + 1));
+                } catch (...) {}
+            }
+        }
+        // Parse for threads per block
+        if (line_str.find("launch__threads_per_block") != std::string::npos) {
+            size_t last_space = line_str.find_last_of(" \t,");
+            if (last_space != std::string::npos) {
+                try {
+                    metrics.threads_per_block = std::stoull(line_str.substr(last_space + 1));
+                } catch (...) {}
+            }
+        }
+        // Parse occupancy
+        if (line_str.find("sm__warps_active") != std::string::npos) {
+            size_t last_space = line_str.find_last_of(" \t,");
+            if (last_space != std::string::npos) {
+                try {
+                    metrics.occupancy = std::stod(line_str.substr(last_space + 1));
+                } catch (...) {}
+            }
+        }
+    }
+    pclose(ncu_output);
+    
+    // Mark as available if we got any data
+    if (metrics.atomic_operations > 0 || metrics.threads_per_block > 0) {
+        metrics.available = true;
+    }
+    
+    return metrics;
+}
+
 std::string createDetailedResponse(const DetailedVRAMInfo& info, const std::string& vllm_metrics = "") {
     std::ostringstream oss;
     double usedPercent = info.total > 0 ? (100.0 * info.used / info.total) : 0.0;
@@ -381,6 +505,24 @@ std::string createDetailedResponse(const DetailedVRAMInfo& info, const std::stri
             << R"(,"allocated":)" << (info.blocks[i].allocated ? "true" : "false") << "}";
     }
     oss << "]";
+    
+    // Add Nsight Compute metrics
+    oss << R"(,"nsight_metrics":{)";
+    bool first_nsight = true;
+    for (const auto& [pid, metrics] : info.nsight_metrics) {
+        if (!first_nsight) oss << ",";
+        first_nsight = false;
+        oss << R"(")" << pid << R"(":{)"
+            << R"("atomic_operations":)" << metrics.atomic_operations
+            << R"(,"threads_per_block":)" << metrics.threads_per_block
+            << R"(,"blocks_per_sm":)" << metrics.blocks_per_sm
+            << R"(,"shared_memory_usage":)" << metrics.shared_memory_usage
+            << R"(,"occupancy":)" << std::fixed << std::setprecision(4) << metrics.occupancy
+            << R"(,"available":)" << (metrics.available ? "true" : "false")
+            << "}";
+    }
+    oss << "}";
+    
     if (!vllm_metrics.empty()) {
         oss << R"(,"vllm_metrics":")";
         for (char c : vllm_metrics) {

@@ -12,9 +12,14 @@ def format_bytes(bytes_val: int) -> str:
         bytes_val /= 1024.0
     return f"{bytes_val:.2f} PB"
 
-def parse_vram(data: Dict[str, Any]):
+def parse_vram(data: Dict[str, Any], clear_screen: bool = False):
+    if clear_screen:
+        import os
+        os.system('clear' if os.name != 'nt' else 'cls')
+    
+    import datetime
     print("=" * 60)
-    print("VRAM Monitor")
+    print(f"VRAM Monitor - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
     
     # Summary
@@ -106,27 +111,27 @@ def parse_vram(data: Dict[str, Any]):
     print("\n" + "=" * 60)
 
 def fetch_vram_stream(url: str = "http://localhost:8080/vram"):
+    import time
     try:
-        response = requests.get(f"{url}/stream", stream=True, timeout=None)
-        response.raise_for_status()
-        buffer = ""
-        for line in response.iter_lines(decode_unicode=True):
-            if line:
-                buffer += line + "\n"
-            elif buffer.strip().startswith("data: "):
-                json_str = buffer.strip()[6:]  # Remove "data: " prefix
-                try:
-                    data = json.loads(json_str)
+        base_url = url.rstrip('/').replace('/stream', '')
+        # Poll the regular endpoint since SSE implementation is broken
+        while True:
+            try:
+                data = fetch_vram(base_url)
+                if data:
                     yield data
-                    buffer = ""
-                except json.JSONDecodeError:
-                    buffer = ""
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching from {url}: {e}", file=sys.stderr)
+                time.sleep(0.5)
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f"Error in stream: {e}", file=sys.stderr)
+                time.sleep(1)
+    except KeyboardInterrupt:
+        pass
 
 def fetch_vram(url: str = "http://localhost:8080/vram") -> Optional[Dict[str, Any]]:
     try:
-        response = requests.get(url, timeout=5)
+        response = requests.get(url, timeout=60)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -135,7 +140,7 @@ def fetch_vram(url: str = "http://localhost:8080/vram") -> Optional[Dict[str, An
 
 def main():
     parser = argparse.ArgumentParser(description='Parse VRAM monitor JSON output')
-    parser.add_argument('input', nargs='?', type=argparse.FileType('r'), default=None,
+    parser.add_argument('input', nargs='?', type=str, default=None,
                        help='JSON input file (default: fetch from server)')
     parser.add_argument('--url', default='http://localhost:8080/vram',
                        help='Server URL (default: http://localhost:8080/vram)')
@@ -144,12 +149,19 @@ def main():
     
     args = parser.parse_args()
     
+    # Handle case where user types --stream true (ignore "true" as input)
+    if args.input and args.input.lower() in ['true', 'false'] and args.stream:
+        args.input = None
+    
     if args.input is None:
         # Fetch from server
         if args.stream:
             try:
                 for data in fetch_vram_stream(args.url):
-                    parse_vram(data)
+                    if data:
+                        parse_vram(data, clear_screen=True)
+                    else:
+                        print("No data received", file=sys.stderr)
             except KeyboardInterrupt:
                 print("\nStopped.")
         else:
@@ -175,9 +187,10 @@ def main():
                         buffer = ""
         else:
             try:
-                data = json.load(args.input)
-                parse_vram(data)
-            except json.JSONDecodeError as e:
+                with open(args.input, 'r') as f:
+                    data = json.load(f)
+                    parse_vram(data)
+            except (json.JSONDecodeError, FileNotFoundError) as e:
                 print(f"Error parsing JSON: {e}", file=sys.stderr)
                 sys.exit(1)
 
