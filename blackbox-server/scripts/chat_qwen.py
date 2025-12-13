@@ -85,7 +85,7 @@ def main():
     
     if args.loop:
         print("Loop mode: sending 'hello, testing inference' every 5 seconds (Ctrl+C to stop)")
-        messages = [{"role": "user", "content": "hello, testing inference"}]
+        messages = [{"role": "user", "content": "Yo burr, lmk what I can cook up with inference for u bru"}]
         try:
             while True:
                 print(f"\n[{time.strftime('%H:%M:%S')}] Sending request...")

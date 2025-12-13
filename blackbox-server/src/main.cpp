@@ -55,6 +55,11 @@ struct NsightMetrics {
     unsigned long long blocks_per_sm;
     unsigned long long shared_memory_usage;
     double occupancy;
+    // Memory block activity metrics
+    unsigned long long active_blocks;  // Blocks actively processing
+    unsigned long long memory_throughput;  // Memory throughput (bytes/sec)
+    unsigned long long dram_read_bytes;  // DRAM read bytes
+    unsigned long long dram_write_bytes;  // DRAM write bytes
     bool available;
 };
 
@@ -191,9 +196,14 @@ DetailedVRAMInfo getDetailedVRAMUsage(const std::string& vllm_metrics = "") {
             detailed.processes.push_back(pm);
             
             // Get Nsight Compute metrics for this PID
+            // This provides actual GPU block activity data
             NsightMetrics nsight = getNsightMetrics(pm.pid);
             if (nsight.available) {
                 detailed.nsight_metrics[pm.pid] = nsight;
+                std::cout << "[DEBUG] Nsight metrics for PID " << pm.pid 
+                          << ": active_blocks=" << nsight.active_blocks
+                          << ", dram_read=" << nsight.dram_read_bytes
+                          << ", dram_write=" << nsight.dram_write_bytes << std::endl;
             }
         }
     }
@@ -218,7 +228,21 @@ DetailedVRAMInfo getDetailedVRAMUsage(const std::string& vllm_metrics = "") {
         detailed.threads.push_back(ti);
     }
     
+    // Get Nsight Compute metrics first (needed for accurate block utilization)
+    // This must be done before parsing vLLM metrics so we can use the data
+    for (auto& pm : detailed.processes) {
+        NsightMetrics nsight = getNsightMetrics(pm.pid);
+        if (nsight.available) {
+            detailed.nsight_metrics[pm.pid] = nsight;
+            std::cout << "[DEBUG] Nsight metrics for PID " << pm.pid 
+                      << ": active_blocks=" << nsight.active_blocks
+                      << ", dram_read=" << nsight.dram_read_bytes
+                      << ", dram_write=" << nsight.dram_write_bytes << std::endl;
+        }
+    }
+    
     // Parse vLLM metrics to populate blocks and update counts
+    // This will use Nsight Compute data if available for more accurate block utilization
     if (!vllm_metrics.empty()) {
         parseVLLMMetrics(vllm_metrics, detailed);
     }
@@ -412,6 +436,7 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
         // kv_cache_usage_perc is percentage of allocated blocks that are utilized
         int utilized_blocks = 0;
         if (kv_cache_usage > 0.0) {
+            // kv_cache_usage is now in 0-100 percentage range
             double utilization_ratio = kv_cache_usage / 100.0;
             utilized_blocks = (int)(num_gpu_blocks * utilization_ratio);
             // Ensure at least 1 block if there's any usage (avoid rounding to 0)
@@ -419,19 +444,15 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
                 utilized_blocks = 1;  // At least 1 block is utilized if usage > 0
             }
             std::cout << "[DEBUG] Using kv_cache_usage: " << kv_cache_usage 
-                      << "%, calculated utilized_blocks=" << utilized_blocks 
+                      << "%, utilization_ratio=" << utilization_ratio
+                      << ", calculated utilized_blocks=" << utilized_blocks 
                       << " out of allocated_blocks=" << allocated_blocks << std::endl;
         } else {
-            // Fallback: estimate based on used memory vs total blocks
-            if (info.total > 0) {
-                double mem_usage_ratio = (double)info.used / info.total;
-                utilized_blocks = (int)(num_gpu_blocks * mem_usage_ratio);
-                std::cout << "[DEBUG] Using memory usage fallback: mem_usage_ratio=" << mem_usage_ratio 
-                          << ", calculated utilized_blocks=" << utilized_blocks << std::endl;
-            } else {
-                utilized_blocks = 0;
-                std::cout << "[DEBUG] info.total is 0, setting utilized_blocks=0" << std::endl;
-            }
+            // kv_cache_usage is 0 - this means no blocks are currently utilized
+            // Don't use memory fallback as it's inaccurate for KV cache
+            utilized_blocks = 0;
+            std::cout << "[DEBUG] kv_cache_usage is 0, setting utilized_blocks=0 (no KV cache in use)" << std::endl;
+            std::cout << "[DEBUG] NOTE: Not using memory fallback as it's inaccurate for KV cache utilization" << std::endl;
         }
         
         // Free blocks = allocated but not utilized
@@ -441,22 +462,58 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
                   << ", utilized_blocks=" << utilized_blocks
                   << ", free_blocks=" << free_blocks << std::endl;
         
+        // Try to use Nsight Compute metrics for actual block activity if available
+        unsigned long long nsight_active_blocks = 0;
+        for (const auto& [pid, nsight] : info.nsight_metrics) {
+            if (nsight.available && nsight.active_blocks > 0) {
+                nsight_active_blocks = nsight.active_blocks;
+                std::cout << "[DEBUG] Found Nsight Compute active_blocks=" << nsight_active_blocks 
+                          << " for PID " << pid << std::endl;
+                break;  // Use first available
+            }
+        }
+        
+        // Use Nsight Compute active blocks if available, otherwise fall back to kv_cache_usage
+        // Note: Nsight Compute gives GPU CUDA blocks, but we can use it as a proxy for KV cache activity
+        int actual_utilized_blocks = utilized_blocks;
+        if (nsight_active_blocks > 0) {
+            // Scale Nsight Compute blocks to KV cache blocks if needed
+            // For now, use it directly as an indicator of actual GPU activity
+            if (nsight_active_blocks < (unsigned long long)num_gpu_blocks) {
+                actual_utilized_blocks = (int)nsight_active_blocks;
+                std::cout << "[DEBUG] Using Nsight Compute active_blocks=" << nsight_active_blocks 
+                          << " instead of calculated utilized_blocks=" << utilized_blocks << std::endl;
+            } else {
+                // If Nsight shows more blocks than allocated, cap at allocated
+                actual_utilized_blocks = num_gpu_blocks;
+                std::cout << "[DEBUG] Nsight active_blocks (" << nsight_active_blocks 
+                          << ") exceeds num_gpu_blocks, capping at " << num_gpu_blocks << std::endl;
+            }
+        }
+        
         // active_blocks = utilized blocks (actually being used)
-        info.active_blocks = utilized_blocks;
-        info.free_blocks = free_blocks;
+        info.active_blocks = actual_utilized_blocks;
+        info.free_blocks = num_gpu_blocks - actual_utilized_blocks;
         
         // Clear existing blocks and populate with vLLM block data
+        // Use Nsight Compute data when available for more accurate utilization
         info.blocks.clear();
         for (int i = 0; i < num_gpu_blocks; ++i) {
             MemoryBlock block;
             block.block_id = i;
             block.size = block_bytes;
             block.address = 0;
-            block.allocated = true;  // All blocks in num_gpu_blocks are allocated
-            block.utilized = (i < utilized_blocks);  // Only first N blocks are actually utilized
+            block.allocated = true;  // All blocks in num_gpu_blocks are allocated/reserved
+            // Use actual_utilized_blocks which may be from Nsight Compute
+            block.utilized = (i < actual_utilized_blocks);
             block.type = "kv_cache";
             info.blocks.push_back(block);
         }
+        
+        std::cout << "[DEBUG] Populated " << num_gpu_blocks << " blocks: " 
+                  << actual_utilized_blocks << " marked as utilized (from "
+                  << (nsight_active_blocks > 0 ? "Nsight Compute" : "kv_cache_usage") << "), " 
+                  << (num_gpu_blocks - actual_utilized_blocks) << " marked as allocated but not utilized" << std::endl;
     }
     
     for (int i = 0; i < num_requests_running; ++i) {
@@ -597,6 +654,10 @@ std::string createDetailedResponse(const DetailedVRAMInfo& info, const std::stri
             << R"(,"blocks_per_sm":)" << metrics.blocks_per_sm
             << R"(,"shared_memory_usage":)" << metrics.shared_memory_usage
             << R"(,"occupancy":)" << std::fixed << std::setprecision(4) << metrics.occupancy
+            << R"(,"active_blocks":)" << metrics.active_blocks
+            << R"(,"memory_throughput":)" << metrics.memory_throughput
+            << R"(,"dram_read_bytes":)" << metrics.dram_read_bytes
+            << R"(,"dram_write_bytes":)" << metrics.dram_write_bytes
             << R"(,"available":)" << (metrics.available ? "true" : "false")
             << "}";
     }
