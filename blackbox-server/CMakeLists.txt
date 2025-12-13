@@ -9,7 +9,7 @@ include(FetchContent)
 # Download Boost headers (full release with all headers)
 FetchContent_Declare(
     boost
-    URL https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.tar.gz
+    URL https://github.com/boostorg/boost/releases/download/boost-1.84.0/boost-1.84.0.tar.gz
 )
 FetchContent_GetProperties(boost)
 if(NOT boost_POPULATED)
