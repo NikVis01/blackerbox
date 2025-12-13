@@ -132,15 +132,16 @@ VLLMBlockData fetchVLLMBlockData() {
     while (fgets(line, sizeof(line), curl)) {
         std::string line_str(line);
         
-        // Parse num_gpu_blocks
-        size_t pos = line_str.find("vllm:num_gpu_blocks");
+        // Parse from vllm:cache_config_info metric (num_gpu_blocks is in labels)
+        size_t pos = line_str.find("vllm:cache_config_info");
         if (pos != std::string::npos) {
-            size_t value_start = line_str.find(' ', pos);
-            if (value_start != std::string::npos) {
-                value_start++;
-                size_t value_end = line_str.find_first_of(" \n", value_start);
-                if (value_end != std::string::npos) {
-                    std::string value_str = line_str.substr(value_start, value_end - value_start);
+            // Extract num_gpu_blocks from labels: num_gpu_blocks="14401"
+            size_t num_blocks_pos = line_str.find("num_gpu_blocks=\"", pos);
+            if (num_blocks_pos != std::string::npos) {
+                num_blocks_pos += 16; // Skip "num_gpu_blocks=\""
+                size_t num_blocks_end = line_str.find("\"", num_blocks_pos);
+                if (num_blocks_end != std::string::npos) {
+                    std::string value_str = line_str.substr(num_blocks_pos, num_blocks_end - num_blocks_pos);
                     // Extract only digits
                     std::string digits;
                     for (char c : value_str) {
@@ -151,23 +152,22 @@ VLLMBlockData fetchVLLMBlockData() {
                     }
                 }
             }
-        }
-        
-        // Parse block_size (if available)
-        pos = line_str.find("vllm:block_size_bytes");
-        if (pos != std::string::npos) {
-            size_t value_start = line_str.find(' ', pos);
-            if (value_start != std::string::npos) {
-                value_start++;
-                size_t value_end = line_str.find_first_of(" \n", value_start);
-                if (value_end != std::string::npos) {
-                    std::string value_str = line_str.substr(value_start, value_end - value_start);
+            
+            // Extract block_size from labels: block_size="16" (in tokens, need to convert to bytes)
+            size_t block_size_pos = line_str.find("block_size=\"", pos);
+            if (block_size_pos != std::string::npos) {
+                block_size_pos += 12; // Skip "block_size=\""
+                size_t block_size_end = line_str.find("\"", block_size_pos);
+                if (block_size_end != std::string::npos) {
+                    std::string value_str = line_str.substr(block_size_pos, block_size_end - block_size_pos);
                     std::string digits;
                     for (char c : value_str) {
                         if (std::isdigit(c)) digits += c;
                     }
                     if (!digits.empty()) {
-                        data.block_size = std::stoull(digits);
+                        // block_size is in tokens, convert to bytes (approximate: 2 bytes per token for KV cache)
+                        unsigned int tokens_per_block = std::stoi(digits);
+                        data.block_size = tokens_per_block * 2; // Rough estimate, actual depends on model
                     }
                 }
             }
@@ -179,9 +179,13 @@ VLLMBlockData fetchVLLMBlockData() {
     if (data.num_gpu_blocks > 0) {
         data.available = true;
         if (data.block_size == 0) {
-            // Default block size if not provided (typical vLLM block size)
+            // Default block size if not provided (typical vLLM block size is 16KB for KV cache)
             data.block_size = 16 * 1024; // 16KB default
         }
+        std::cout << "[DEBUG] vLLM blocks: num_gpu_blocks=" << data.num_gpu_blocks 
+                  << ", block_size=" << data.block_size << " bytes" << std::endl;
+    } else {
+        std::cout << "[DEBUG] vLLM block data not available" << std::endl;
     }
     
     return data;
@@ -484,20 +488,14 @@ void handleStreamingRequest(tcp::socket& socket) {
                 
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             } catch (const boost::system::system_error& e) {
-                // Client disconnected during streaming
+                // Client disconnected during streaming (handles both boost::system and boost::beast errors)
                 if (e.code() == boost::asio::error::broken_pipe || 
                     e.code() == boost::asio::error::connection_reset ||
-                    e.code() == boost::asio::error::eof) {
+                    e.code() == boost::asio::error::eof ||
+                    e.code() == boost::beast::http::error::end_of_stream) {
                     break;
                 }
                 throw; // Re-throw other errors
-            } catch (const boost::beast::system_error& e) {
-                // Beast-specific connection errors
-                if (e.code() == boost::beast::http::error::end_of_stream ||
-                    e.code() == boost::asio::error::eof) {
-                    break;
-                }
-                throw;
             }
         }
     } catch (...) {
@@ -552,6 +550,7 @@ void acceptConnections(tcp::acceptor& acceptor) {
             handleRequest(req, socket);
         } catch (const boost::system::system_error& e) {
             // Handle connection errors gracefully - client disconnected
+            // (boost::beast::system_error is a typedef of boost::system::system_error)
             if (e.code() == boost::asio::error::broken_pipe || 
                 e.code() == boost::asio::error::connection_reset ||
                 e.code() == boost::asio::error::eof ||
@@ -561,13 +560,6 @@ void acceptConnections(tcp::acceptor& acceptor) {
             }
             // Only log non-connection errors
             std::cerr << "Connection error: " << e.what() << std::endl;
-        } catch (const boost::beast::system_error& e) {
-            // Handle Beast-specific errors (like end_of_stream)
-            if (e.code() == boost::beast::http::error::end_of_stream ||
-                e.code() == boost::asio::error::eof) {
-                continue; // Client disconnected, continue silently
-            }
-            std::cerr << "Beast error: " << e.what() << std::endl;
         } catch (const std::exception& e) {
             // Check if it's an end of stream message
             std::string err_msg = e.what();
