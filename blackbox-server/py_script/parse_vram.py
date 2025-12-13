@@ -122,20 +122,13 @@ def parse_vram(data: Dict[str, Any], clear_screen: bool = False):
                 print(f"\n  PID {pid}:")
                 print(f"    Atomic Operations: {metrics.get('atomic_operations', 0):,}")
                 print(f"    Threads per Block: {metrics.get('threads_per_block', 0)}")
-                print(f"    Blocks per SM: {metrics.get('blocks_per_sm', 0)}")
-                print(f"    Shared Memory Usage: {format_bytes(metrics.get('shared_memory_usage', 0))}")
+                print(f"    Active Blocks (GPU): {metrics.get('active_blocks', 0)}")
+                print(f"    DRAM Read Bytes: {format_bytes(metrics.get('dram_read_bytes', 0))}")
+                print(f"    DRAM Write Bytes: {format_bytes(metrics.get('dram_write_bytes', 0))}")
+                print(f"    Memory Throughput: {metrics.get('memory_throughput', 0) / (1024**3):.2f} GB/s")
                 print(f"    Occupancy: {metrics.get('occupancy', 0.0):.2f}%")
             elif isinstance(metrics, dict):
                 print(f"\n  PID {pid}: (No metrics available - process may not be running CUDA kernels)")
-    
-    # vLLM Metrics
-    vllm_metrics = data.get('vllm_metrics', '')
-    if vllm_metrics:
-        print(f"\nvLLM Metrics:")
-        print("  " + "-" * 58)
-        for line in vllm_metrics.split('\n'):
-            if line.strip() and not line.strip().startswith('#'):
-                print(f"  {line}")
     
     print("\n" + "=" * 60)
 
