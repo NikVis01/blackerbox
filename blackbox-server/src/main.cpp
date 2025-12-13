@@ -2,6 +2,8 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #ifdef NVML_AVAILABLE
 #include <nvml.h>
 #endif
@@ -172,7 +174,36 @@ std::string createResponse(const VRAMInfo& info) {
     return oss.str();
 }
 
-std::string createDetailedResponse(const DetailedVRAMInfo& info) {
+std::string fetchVLLMMetrics(const std::string& vllm_url = "http://localhost:8000") {
+    try {
+        net::io_context ioc;
+        tcp::resolver resolver(ioc);
+        auto const results = resolver.resolve("localhost", "8000");
+        tcp::socket socket(ioc);
+        net::connect(socket, results);
+        
+        http::request<http::string_body> req{http::verb::get, "/metrics", 11};
+        req.set(http::field::host, "localhost");
+        req.set(http::field::user_agent, "blackbox-server");
+        
+        http::write(socket, req);
+        
+        beast::flat_buffer buffer;
+        http::response<http::string_body> res;
+        http::read(socket, buffer, res);
+        
+        beast::error_code ec;
+        socket.shutdown(tcp::socket::shutdown_both, ec);
+        
+        if (res.result() == http::status::ok) {
+            return res.body();
+        }
+    } catch (...) {
+    }
+    return "";
+}
+
+std::string createDetailedResponse(const DetailedVRAMInfo& info, const std::string& vllm_metrics = "") {
     std::ostringstream oss;
     double usedPercent = info.total > 0 ? (100.0 * info.used / info.total) : 0.0;
     oss << R"({"total_bytes":)" << info.total
@@ -208,26 +239,90 @@ std::string createDetailedResponse(const DetailedVRAMInfo& info) {
             << R"(,"type":")" << info.blocks[i].type << R"(")"
             << R"(,"allocated":)" << (info.blocks[i].allocated ? "true" : "false") << "}";
     }
-    oss << "]}";
+    oss << "]";
+    if (!vllm_metrics.empty()) {
+        oss << R"(,"vllm_metrics":")";
+        for (char c : vllm_metrics) {
+            if (c == '"' || c == '\\' || c == '\n') {
+                oss << '\\';
+                if (c == '\n') oss << 'n';
+                else oss << c;
+            } else {
+                oss << c;
+            }
+        }
+        oss << R"(")";
+    }
+    oss << "}";
     return oss.str();
 }
 
+void handleStreamingRequest(tcp::socket& socket) {
+    http::response<http::string_body> res;
+    res.result(http::status::ok);
+    res.set(http::field::content_type, "text/event-stream");
+    res.set(http::field::cache_control, "no-cache");
+    res.set(http::field::connection, "keep-alive");
+    res.body() = "";
+    res.prepare_payload();
+    http::write(socket, res);
+    
+    while (true) {
+        try {
+            DetailedVRAMInfo info = getDetailedVRAMUsage();
+            std::string vllm_metrics = fetchVLLMMetrics();
+            std::string json = createDetailedResponse(info, vllm_metrics);
+            
+            std::ostringstream event;
+            event << "data: " << json << "\n\n";
+            
+            http::response<http::string_body> chunk;
+            chunk.result(http::status::ok);
+            chunk.set(http::field::content_type, "text/event-stream");
+            chunk.body() = event.str();
+            chunk.prepare_payload();
+            
+            http::write(socket, chunk);
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        } catch (...) {
+            break;
+        }
+    }
+}
+
 void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
+    std::string target = std::string(req.target());
+    
+    if (req.method() == http::verb::get) {
+        if (target == "/vram" || target == "/vram/stream") {
+            if (target == "/vram/stream") {
+                handleStreamingRequest(socket);
+                return;
+            }
+            
+            DetailedVRAMInfo info = getDetailedVRAMUsage();
+            std::string vllm_metrics = fetchVLLMMetrics();
+            std::string json = createDetailedResponse(info, vllm_metrics);
+            
+            http::response<http::string_body> res;
+            res.version(req.version());
+            res.keep_alive(req.keep_alive());
+            res.result(http::status::ok);
+            res.set(http::field::content_type, "application/json");
+            res.body() = json;
+            res.prepare_payload();
+            http::write(socket, res);
+            return;
+        }
+    }
+    
     http::response<http::string_body> res;
     res.version(req.version());
     res.keep_alive(req.keep_alive());
-
-    if (req.method() == http::verb::get && req.target() == "/vram") {
-        DetailedVRAMInfo info = getDetailedVRAMUsage();
-        res.result(http::status::ok);
-        res.set(http::field::content_type, "application/json");
-        res.body() = createDetailedResponse(info);
-    } else {
-        res.result(http::status::not_found);
-        res.set(http::field::content_type, "text/plain");
-        res.body() = "Not Found";
-    }
-
+    res.result(http::status::not_found);
+    res.set(http::field::content_type, "text/plain");
+    res.body() = "Not Found";
     res.prepare_payload();
     http::write(socket, res);
 }
