@@ -14,14 +14,31 @@ FetchContent_Declare(
 FetchContent_GetProperties(boost)
 if(NOT boost_POPULATED)
     FetchContent_Populate(boost)
+    set(BOOST_BUILD_DIR ${CMAKE_BINARY_DIR}/boost_build)
+    file(MAKE_DIRECTORY ${BOOST_BUILD_DIR})
     # Build only system library (required by asio)
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E chdir ${boost_SOURCE_DIR} ./bootstrap.sh --with-libraries=system
+        COMMAND ./bootstrap.sh --with-libraries=system --prefix=${CMAKE_BINARY_DIR}/boost_install
         WORKING_DIRECTORY ${boost_SOURCE_DIR}
+        RESULT_VARIABLE bootstrap_result
+        OUTPUT_QUIET ERROR_QUIET
     )
+    if(NOT bootstrap_result EQUAL 0)
+        message(FATAL_ERROR "Boost bootstrap failed")
+    endif()
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E chdir ${boost_SOURCE_DIR} ./b2 --with-system --prefix=${CMAKE_BINARY_DIR}/boost_install variant=release link=static threading=multi
+        COMMAND ./b2 --with-system --prefix=${CMAKE_BINARY_DIR}/boost_install variant=release link=static threading=multi -j$(nproc)
         WORKING_DIRECTORY ${boost_SOURCE_DIR}
+        RESULT_VARIABLE b2_result
+        OUTPUT_QUIET ERROR_QUIET
+    )
+    if(NOT b2_result EQUAL 0)
+        message(FATAL_ERROR "Boost b2 build failed")
+    endif()
+    execute_process(
+        COMMAND ./b2 install
+        WORKING_DIRECTORY ${boost_SOURCE_DIR}
+        RESULT_VARIABLE install_result
     )
 endif()
 
