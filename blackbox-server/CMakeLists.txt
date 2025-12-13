@@ -27,10 +27,14 @@ if(NOT boost_POPULATED)
         message(FATAL_ERROR "Boost bootstrap failed")
     endif()
     execute_process(
-        COMMAND ./b2 --with-system --prefix=${CMAKE_BINARY_DIR}/boost_install variant=release link=static threading=multi -j$(nproc)
+        COMMAND bash -c "nproc"
+        OUTPUT_VARIABLE NPROC
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    execute_process(
+        COMMAND ./b2 --with-system --prefix=${CMAKE_BINARY_DIR}/boost_install variant=release link=static threading=multi -j${NPROC}
         WORKING_DIRECTORY ${boost_SOURCE_DIR}
         RESULT_VARIABLE b2_result
-        OUTPUT_QUIET ERROR_QUIET
     )
     if(NOT b2_result EQUAL 0)
         message(FATAL_ERROR "Boost b2 build failed")
