@@ -95,6 +95,8 @@ void shutdownNVML() {
     }
 }
 
+void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info);
+
 VRAMInfo getVRAMUsage() {
     VRAMInfo info = {0, 0, 0};
     if (!initNVML()) return info;
@@ -223,27 +225,31 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
     int num_requests_waiting = 0;
     
     while (std::getline(iss, line)) {
-        if (line.find("num_gpu_blocks=") != std::string::npos) {
-            size_t start = line.find("num_gpu_blocks=\"");
-            if (start != std::string::npos) {
-                start += 15;
-                size_t end = line.find("\"", start);
-                if (end != std::string::npos) {
-                    num_gpu_blocks = std::stoi(line.substr(start, end - start));
+        if (line.find("cache_config_info") != std::string::npos) {
+            size_t num_start = line.find("num_gpu_blocks=\"");
+            if (num_start != std::string::npos) {
+                num_start += 15;
+                size_t num_end = line.find("\"", num_start);
+                if (num_end != std::string::npos) {
+                    try {
+                        num_gpu_blocks = std::stoi(line.substr(num_start, num_end - num_start));
+                    } catch (...) {}
+                }
+            }
+            
+            size_t size_start = line.find("block_size=\"");
+            if (size_start != std::string::npos) {
+                size_start += 12;
+                size_t size_end = line.find("\"", size_start);
+                if (size_end != std::string::npos) {
+                    try {
+                        block_size = std::stoi(line.substr(size_start, size_end - size_start));
+                    } catch (...) {}
                 }
             }
         }
-        if (line.find("block_size=") != std::string::npos) {
-            size_t start = line.find("block_size=\"");
-            if (start != std::string::npos) {
-                start += 12;
-                size_t end = line.find("\"", start);
-                if (end != std::string::npos) {
-                    block_size = std::stoi(line.substr(start, end - start));
-                }
-            }
-        }
-        if (line.find("kv_cache_usage_perc") != std::string::npos && line.find("}") != std::string::npos) {
+        
+        if (line.find("kv_cache_usage_perc{") != std::string::npos) {
             size_t val_start = line.find_last_of(" ");
             if (val_start != std::string::npos) {
                 try {
@@ -251,19 +257,21 @@ void parseVLLMMetrics(const std::string& metrics, DetailedVRAMInfo& info) {
                 } catch (...) {}
             }
         }
-        if (line.find("num_requests_running") != std::string::npos && line.find("}") != std::string::npos) {
+        
+        if (line.find("num_requests_running{") != std::string::npos) {
             size_t val_start = line.find_last_of(" ");
             if (val_start != std::string::npos) {
                 try {
-                    num_requests_running = std::stoi(line.substr(val_start + 1));
+                    num_requests_running = (int)std::stod(line.substr(val_start + 1));
                 } catch (...) {}
             }
         }
-        if (line.find("num_requests_waiting") != std::string::npos && line.find("}") != std::string::npos) {
+        
+        if (line.find("num_requests_waiting{") != std::string::npos) {
             size_t val_start = line.find_last_of(" ");
             if (val_start != std::string::npos) {
                 try {
-                    num_requests_waiting = std::stoi(line.substr(val_start + 1));
+                    num_requests_waiting = (int)std::stod(line.substr(val_start + 1));
                 } catch (...) {}
             }
         }
