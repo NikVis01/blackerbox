@@ -254,7 +254,7 @@ VLLMBlockData fetchVLLMBlockData() {
 // - Total/used/free VRAM (system-level)
 // - Process-level VRAM usage by PID
 DetailedVRAMInfo getDetailedVRAMUsage() {
-    DetailedVRAMInfo detailed = {0, 0, 0, 0, {}, {}, {}, 0, 0, 0, 0.0};
+    DetailedVRAMInfo detailed = {0, 0, 0, 0, {}, {}, {}, 0, 0, 0, 0, 0.0};
     if (!initNVML()) return detailed;
 #ifdef NVML_AVAILABLE
     nvmlMemory_t memory;
