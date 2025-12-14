@@ -57,13 +57,35 @@ else
     fi
     
     # Install NVIDIA drivers (latest stable)
-    $SUDO apt install -y nvidia-driver-535 nvidia-utils-535 || \
-    $SUDO apt install -y nvidia-driver-525 nvidia-utils-525 || \
-    $SUDO apt install -y nvidia-driver-470 nvidia-utils-470
+    # For Ubuntu 22.04, prefer 535 or 525
+    if $SUDO apt install -y nvidia-driver-535 nvidia-utils-535 2>/dev/null; then
+        echo "✓ Installed nvidia-driver-535 and nvidia-utils-535"
+    elif $SUDO apt install -y nvidia-driver-525 nvidia-utils-525 2>/dev/null; then
+        echo "✓ Installed nvidia-driver-525 and nvidia-utils-525"
+    elif $SUDO apt install -y nvidia-driver-470 nvidia-utils-470 2>/dev/null; then
+        echo "✓ Installed nvidia-driver-470 and nvidia-utils-470"
+    else
+        echo "⚠ Could not install drivers automatically"
+        echo "Try: sudo ubuntu-drivers autoinstall"
+    fi
     
-    echo "⚠ Drivers installed. REBOOT REQUIRED before continuing!"
+    echo ""
+    echo "⚠⚠⚠ REBOOT REQUIRED ⚠⚠⚠"
+    echo "After reboot, drivers and NVML library versions will match"
     echo "Run: sudo reboot"
     exit 0
+fi
+
+# Check for driver/library version mismatch
+echo "Checking for driver/library version mismatch..."
+if nvidia-smi &>/dev/null; then
+    DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+    echo "✓ Driver version: $DRIVER_VERSION"
+    echo "✓ nvidia-smi works - driver and library versions match"
+else
+    echo "⚠ nvidia-smi failed - possible driver/library mismatch"
+    echo "Try: sudo reboot"
+    echo "Or reinstall: sudo apt install --reinstall nvidia-utils-535"
 fi
 
 # 4. Install CUDA Toolkit (optional but recommended)

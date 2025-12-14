@@ -96,14 +96,24 @@ bool initNVML() {
 #ifdef NVML_AVAILABLE
     nvmlReturn_t result = nvmlInit();
     if (result != NVML_SUCCESS) {
-        std::cerr << "[NVML] Initialization failed: " << nvmlErrorString(result) << std::endl;
+        std::cerr << "[NVML] Initialization failed (error code: " << result << ")" << std::endl;
+        if (result == NVML_ERROR_DRIVER_NOT_LOADED) {
+            std::cerr << "[NVML] Driver not loaded. Try: sudo modprobe nvidia" << std::endl;
+        } else if (result == NVML_ERROR_LIBRARY_NOT_FOUND) {
+            std::cerr << "[NVML] Library not found. Install: sudo apt install -y nvidia-utils-535" << std::endl;
+        } else if (result == NVML_ERROR_NO_PERMISSION) {
+            std::cerr << "[NVML] Permission denied. Try running as root or add user to video group" << std::endl;
+        } else {
+            std::cerr << "[NVML] Check: 1) NVIDIA drivers installed? 2) GPU present? 3) nvidia-smi works?" << std::endl;
+            std::cerr << "[NVML] If 'Driver/library version mismatch': Reboot or reinstall drivers" << std::endl;
+        }
         return false;
     }
     
     unsigned int deviceCount = 0;
     result = nvmlDeviceGetCount(&deviceCount);
     if (result != NVML_SUCCESS) {
-        std::cerr << "[NVML] Failed to get device count: " << nvmlErrorString(result) << std::endl;
+        std::cerr << "[NVML] Failed to get device count (error code: " << result << ")" << std::endl;
         nvmlShutdown();
         return false;
     }
@@ -118,7 +128,7 @@ bool initNVML() {
     
     result = nvmlDeviceGetHandleByIndex(0, &g_device);
     if (result != NVML_SUCCESS) {
-        std::cerr << "[NVML] Failed to get device handle: " << nvmlErrorString(result) << std::endl;
+        std::cerr << "[NVML] Failed to get device handle (error code: " << result << ")" << std::endl;
         nvmlShutdown();
         return false;
     }
@@ -128,6 +138,7 @@ bool initNVML() {
     return true;
 #else
     std::cerr << "[NVML] NVML not available (compiled without NVML support)" << std::endl;
+    std::cerr << "[NVML] Install: sudo apt install -y libnvidia-ml-dev" << std::endl;
     return false;
 #endif
 }
