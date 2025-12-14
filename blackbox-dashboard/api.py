@@ -57,12 +57,15 @@ class NodeCollector:
             db = get_session()
             try:
                 # Calculate derived metrics
-                active_blocks = data.get("active_blocks", 0)
-                utilized_blocks = sum(1 for b in data.get("blocks", []) if b.get("utilized"))
+                # New API returns: allocated_blocks (total), utilized_blocks (used), free_blocks (allocated but not used)
+                allocated_blocks = data.get("allocated_blocks", 0)
+                utilized_blocks = data.get("utilized_blocks", 0)
+                free_blocks = data.get("free_blocks", 0)
+
                 total_bytes = data.get("total_bytes", 0)
                 used_bytes = data.get("used_bytes", 0)
 
-                kv_cache_util = (utilized_blocks / active_blocks * 100) if active_blocks > 0 else 0
+                kv_cache_util = (utilized_blocks / allocated_blocks * 100) if allocated_blocks > 0 else 0
                 vllm_mem_util = (used_bytes / total_bytes * 100) if total_bytes > 0 else 0
 
                 # Create snapshot
@@ -71,12 +74,12 @@ class NodeCollector:
                     timestamp=datetime.utcnow(),
                     total_bytes=total_bytes,
                     used_bytes=used_bytes,
-                    free_bytes=data.get("free_blocks", 0),
+                    free_bytes=data.get("free_bytes", 0),
                     reserved_bytes=data.get("reserved_bytes", 0),
                     used_percent=data.get("used_percent", 0.0),
-                    active_blocks=active_blocks,
-                    free_blocks=data.get("free_blocks", 0),
-                    utilized_blocks=utilized_blocks,
+                    allocated_blocks=allocated_blocks,  # Total allocated blocks for KV cache
+                    free_blocks=free_blocks,  # Allocated but not utilized
+                    utilized_blocks=utilized_blocks,  # Actually being used
                     atomic_allocations_bytes=data.get("atomic_allocations_bytes", 0),
                     fragmentation_ratio=data.get("fragmentation_ratio", 0.0),
                     num_processes=len(data.get("processes", [])),
@@ -270,19 +273,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Mount static files for dashboard
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-# Enable CORS for frontend
+# Enable CORS for frontend (must be added before routes and static files)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Mount static files for dashboard
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 # Pydantic models for API
@@ -344,8 +348,8 @@ class VRAMSnapshotCreate(BaseModel):
     free_bytes: int
     reserved_bytes: int
     used_percent: float
-    active_blocks: int
-    free_blocks: int
+    allocated_blocks: int  # Total allocated blocks for KV cache
+    free_blocks: int  # Allocated but not utilized
     atomic_allocations_bytes: int
     fragmentation_ratio: float
     processes: List[ProcessData] = []
@@ -363,13 +367,17 @@ class VRAMSnapshotResponse(BaseModel):
     free_bytes: int
     reserved_bytes: int
     used_percent: float
-    active_blocks: int
-    free_blocks: int
+    allocated_blocks: int  # Total allocated blocks for KV cache
+    free_blocks: int  # Allocated but not utilized
+    utilized_blocks: Optional[int] = None  # Actually being used
     atomic_allocations_bytes: int
     fragmentation_ratio: float
     num_processes: int
     num_threads: int
     num_blocks: int
+    kv_cache_utilization: Optional[float] = None
+    vllm_memory_utilization: Optional[float] = None
+    memory_fragmentation: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -858,8 +866,9 @@ async def get_timeseries(
             'fragmentation_ratio': lambda s: s.fragmentation_ratio,
             'num_processes': lambda s: s.num_processes,
             'num_threads': lambda s: s.num_threads,
-            'active_blocks': lambda s: s.active_blocks,
-            'free_bytes': lambda s: s.free_bytes,
+            'allocated_blocks': lambda s: s.allocated_blocks,  # Total allocated blocks
+            'utilized_blocks': lambda s: s.utilized_blocks or 0,  # Actually used blocks
+            'free_blocks': lambda s: s.free_blocks,  # Allocated but not used
             'reserved_bytes': lambda s: s.reserved_bytes,
             'kv_cache_utilization': lambda s: s.kv_cache_utilization or 0,
             'vllm_memory_utilization': lambda s: s.vllm_memory_utilization or 0,

@@ -42,8 +42,8 @@ class VRAMSnapshot(Base):
     used_percent = Column(Float)
 
     # Block metrics
-    active_blocks = Column(Integer)
-    free_blocks = Column(Integer)
+    allocated_blocks = Column(Integer)  # Total blocks allocated for KV cache
+    free_blocks = Column(Integer)  # Allocated but not utilized
     atomic_allocations_bytes = Column(Integer)
     fragmentation_ratio = Column(Float)
 
@@ -54,7 +54,7 @@ class VRAMSnapshot(Base):
 
     # Derived metrics
     utilized_blocks = Column(Integer, nullable=True)  # Count of blocks that are utilized
-    kv_cache_utilization = Column(Float, nullable=True)  # utilized_blocks / active_blocks * 100
+    kv_cache_utilization = Column(Float, nullable=True)  # utilized_blocks / allocated_blocks * 100
     vllm_memory_utilization = Column(Float, nullable=True)  # used_bytes / total_bytes * 100
     memory_fragmentation = Column(Float, nullable=True)  # same as fragmentation_ratio
 
