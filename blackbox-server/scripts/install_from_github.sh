@@ -19,9 +19,14 @@ wget -O /tmp/${DEB_FILE} ${GITHUB_URL} || {
     exit 1
 }
 
-# Install
+# Update package list
+echo "Updating package list..."
+sudo apt-get update
+
+# Install the package (apt-get install -f will handle dependencies)
+echo "Installing package..."
 sudo dpkg -i /tmp/${DEB_FILE} || {
-    echo "Fixing dependencies..."
+    echo "Installing missing dependencies..."
     sudo apt-get install -f -y
 }
 

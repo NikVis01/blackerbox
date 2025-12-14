@@ -36,7 +36,7 @@ PACKAGE_DIR="${PACKAGE_NAME}_${VERSION}"
 rm -rf "$PACKAGE_DIR" "${PACKAGE_DIR}.deb"
 
 mkdir -p "$PACKAGE_DIR/DEBIAN"
-mkdir -p "$PACKAGE_DIR/usr/local/bin"
+mkdir -p "$PACKAGE_DIR/usr/bin"
 mkdir -p "$PACKAGE_DIR/usr/lib/blackbox-server"
 mkdir -p "$PACKAGE_DIR/lib/systemd/system"
 
@@ -46,8 +46,8 @@ echo -e "${GREEN}✓ Directory structure created${NC}"
 echo -e "\n${YELLOW}Step 3: Copying files...${NC}"
 
 # Copy binary
-cp build/blackbox-server "$PACKAGE_DIR/usr/local/bin/"
-chmod 0755 "$PACKAGE_DIR/usr/local/bin/blackbox-server"
+cp build/blackbox-server "$PACKAGE_DIR/usr/bin/"
+chmod 0755 "$PACKAGE_DIR/usr/bin/blackbox-server"
 
 # Copy Python scripts
 cp py_script/parse_vram.py "$PACKAGE_DIR/usr/lib/blackbox-server/"
@@ -56,8 +56,9 @@ chmod 0755 "$PACKAGE_DIR/usr/lib/blackbox-server/parse_vram.py"
 chmod 0755 "$PACKAGE_DIR/usr/lib/blackbox-server/chat_qwen.py"
 
 # Create symlinks for Python scripts
-ln -s /usr/lib/blackbox-server/parse_vram.py "$PACKAGE_DIR/usr/local/bin/parse-vram"
-ln -s /usr/lib/blackbox-server/chat_qwen.py "$PACKAGE_DIR/usr/local/bin/chat-qwen"
+install -d "$PACKAGE_DIR/usr/bin"
+ln -s /usr/lib/blackbox-server/parse_vram.py "$PACKAGE_DIR/usr/bin/parse-vram"
+ln -s /usr/lib/blackbox-server/chat_qwen.py "$PACKAGE_DIR/usr/bin/chat-qwen"
 
 # Copy systemd service
 cp debian/blackbox-server.service "$PACKAGE_DIR/lib/systemd/system/"
