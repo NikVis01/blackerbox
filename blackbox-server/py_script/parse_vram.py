@@ -67,16 +67,7 @@ def parse_vram(data: Dict[str, Any], clear_screen: bool = False):
                   f"{format_bytes(p.get('used_bytes', 0)):<15} "
                   f"{format_bytes(p.get('reserved_bytes', 0)):<15}")
     
-    # Threads
-    threads = data.get('threads', [])
-    if threads:
-        print(f"\nThreads ({len(threads)}):")
-        print(f"  {'ID':<10} {'Allocated':<15} {'State':<10}")
-        print("  " + "-" * 35)
-        for t in threads:
-            print(f"  {t.get('thread_id', 0):<10} "
-                  f"{format_bytes(t.get('allocated_bytes', 0)):<15} "
-                  f"{t.get('state', 'unknown'):<10}")
+    # Threads section removed - threads array is now empty (was redundant 1:1 mapping of processes)
     
     # Blocks detail
     blocks = data.get('blocks', [])

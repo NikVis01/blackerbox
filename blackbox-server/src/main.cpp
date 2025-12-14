@@ -131,6 +131,7 @@ VLLMBlockData fetchVLLMBlockData() {
     if (!curl) return data;
     
     char line[4096];
+    bool found_kv_usage = false;
     while (fgets(line, sizeof(line), curl)) {
         std::string line_str(line);
         
@@ -177,27 +178,43 @@ VLLMBlockData fetchVLLMBlockData() {
         }
         
         // Parse kv_cache_usage_perc from vLLM metrics (separate metric, not in cache_config_info)
-        // Format: vllm:kv_cache_usage_perc{engine="0",model_name="..."} 0.0
+        // Format: vllm:kv_cache_usage_perc{engine="0",model_name="Qwen/Qwen2.5-7B-Instruct"} 0.0
         size_t kv_usage_pos = line_str.find("vllm:kv_cache_usage_perc");
         if (kv_usage_pos != std::string::npos) {
+            found_kv_usage = true;
             // Find the value after the closing brace
             size_t brace_end = line_str.find("}", kv_usage_pos);
             if (brace_end != std::string::npos) {
                 size_t value_start = line_str.find_first_not_of(" \t", brace_end + 1);
                 if (value_start != std::string::npos) {
-                    size_t value_end = line_str.find_first_of(" \n", value_start);
-                    if (value_end != std::string::npos) {
+                    size_t value_end = line_str.find_first_of(" \n\r", value_start);
+                    if (value_end == std::string::npos) {
+                        // Try to find end of line if no space found
+                        value_end = line_str.length();
+                    }
+                    if (value_end > value_start) {
                         std::string value_str = line_str.substr(value_start, value_end - value_start);
                         try {
                             data.kv_cache_usage_perc = std::stod(value_str);
                             // vLLM returns 0-1 range, ensure it's in that range
                             if (data.kv_cache_usage_perc < 0.0) data.kv_cache_usage_perc = 0.0;
                             if (data.kv_cache_usage_perc > 1.0) data.kv_cache_usage_perc = 1.0;
-                        } catch (...) {
+                            std::cout << "[DEBUG] Found and parsed kv_cache_usage_perc: '" << value_str 
+                                      << "' -> " << data.kv_cache_usage_perc << " (" 
+                                      << (data.kv_cache_usage_perc * 100.0) << "%)" << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cout << "[DEBUG] Failed to parse kv_cache_usage_perc value: '" 
+                                      << value_str << "' error: " << e.what() << std::endl;
                             data.kv_cache_usage_perc = 0.0;
                         }
+                    } else {
+                        std::cout << "[DEBUG] kv_cache_usage_perc: value_end <= value_start" << std::endl;
                     }
+                } else {
+                    std::cout << "[DEBUG] kv_cache_usage_perc: no value_start found after }" << std::endl;
                 }
+            } else {
+                std::cout << "[DEBUG] kv_cache_usage_perc: no closing brace found" << std::endl;
             }
         }
     }
@@ -209,8 +226,12 @@ VLLMBlockData fetchVLLMBlockData() {
         // Block size will be calculated from actual GPU memory usage in getDetailedVRAMUsage()
         // This is just a fallback default
         data.block_size = 16 * 1024; // 16KB fallback (will be overridden by calculation)
+        if (!found_kv_usage) {
+            std::cout << "[DEBUG] WARNING: kv_cache_usage_perc metric not found in vLLM metrics!" << std::endl;
+        }
         std::cout << "[DEBUG] vLLM blocks: num_gpu_blocks=" << data.num_gpu_blocks 
-                  << ", kv_cache_usage=" << (data.kv_cache_usage_perc * 100.0) << "%" << std::endl;
+                  << ", kv_cache_usage_perc=" << data.kv_cache_usage_perc 
+                  << " (" << (data.kv_cache_usage_perc * 100.0) << "%)" << std::endl;
     } else {
         std::cout << "[DEBUG] vLLM block data not available" << std::endl;
     }
