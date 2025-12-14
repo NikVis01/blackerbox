@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackbox - KV-Cache Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .nodes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 20px;
+        }
+
+        .node-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .node-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .node-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .node-status {
+            font-size: 0.85rem;
+            color: #666;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .utilization-display {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .utilization-value {
+            font-size: 4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+        }
+
+        .utilization-label {
+            font-size: 1rem;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .ratio-display {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .ratio-item {
+            text-align: center;
+        }
+
+        .ratio-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .ratio-label {
+            font-size: 0.85rem;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #f0f0f0;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        .no-data {
+            text-align: center;
+            color: white;
+            font-size: 1.2rem;
+            padding: 60px 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            margin-top: 20px;
+        }
+
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 KV-Cache Monitor</h1>
+        <div id="error-container"></div>
+        <div id="nodes-container" class="nodes-grid"></div>
+        <div class="refresh-info">Auto-refresh every 5 seconds</div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        let refreshInterval;
+
+        async function fetchNodes() {
+            try {
+                const response = await fetch(`${API_BASE}/nodes`);
+                if (!response.ok) throw new Error('Failed to fetch nodes');
+                return await response.json();
+            } catch (error) {
+                showError('Failed to fetch nodes: ' + error.message);
+                return [];
+            }
+        }
+
+        async function fetchLatestSnapshot(nodeId) {
+            try {
+                const response = await fetch(`${API_BASE}/snapshots/latest?node_id=${nodeId}`);
+                if (!response.ok) {
+                    if (response.status === 404) return null;
+                    throw new Error('Failed to fetch snapshot');
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching snapshot for node ${nodeId}:`, error);
+                return null;
+            }
+        }
+
+        function calculateUtilization(snapshot) {
+            if (!snapshot) return { utilization: 0, utilized: 0, active: 0 };
+
+            const utilized = snapshot.utilized_blocks || 0;
+            const active = snapshot.active_blocks || 0;
+            const utilization = snapshot.kv_cache_utilization || 0;
+
+            return {
+                utilization: utilization,
+                utilized: utilized,
+                active: active
+            };
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            return date.toLocaleTimeString();
+        }
+
+        function createNodeCard(node, snapshot) {
+            const { utilization, utilized, active } = calculateUtilization(snapshot);
+            const isOnline = snapshot && node.enabled;
+
+            return `
+                <div class="node-card ${!isOnline ? 'loading' : ''}">
+                    <div class="node-name">${node.name}</div>
+                    <div class="node-status">
+                        ${isOnline ? '🟢 Online' : '🔴 Offline'} •
+                        ${node.host}:${node.port}
+                        ${snapshot ? ` • ${formatTimestamp(snapshot.timestamp)}` : ''}
+                    </div>
+
+                    <div class="utilization-display">
+                        <div class="utilization-value">${utilization.toFixed(1)}%</div>
+                        <div class="utilization-label">KV-Cache Utilization</div>
+                    </div>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${utilization}%"></div>
+                    </div>
+
+                    <div class="ratio-display">
+                        <div class="ratio-item">
+                            <div class="ratio-value">${utilized}</div>
+                            <div class="ratio-label">Utilized Blocks</div>
+                        </div>
+                        <div class="ratio-item">
+                            <div class="ratio-value">${active}</div>
+                            <div class="ratio-label">Active Blocks</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error">${message}</div>`;
+            setTimeout(() => errorContainer.innerHTML = '', 5000);
+        }
+
+        async function updateDashboard() {
+            const nodes = await fetchNodes();
+            const container = document.getElementById('nodes-container');
+
+            if (nodes.length === 0) {
+                container.innerHTML = '<div class="no-data">No nodes configured. Add nodes via the API to start monitoring.</div>';
+                return;
+            }
+
+            // Fetch snapshots for all nodes
+            const snapshots = await Promise.all(
+                nodes.map(node => fetchLatestSnapshot(node.id))
+            );
+
+            // Render node cards
+            container.innerHTML = nodes.map((node, index) =>
+                createNodeCard(node, snapshots[index])
+            ).join('');
+        }
+
+        // Initialize
+        updateDashboard();
+        refreshInterval = setInterval(updateDashboard, 5000);
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (refreshInterval) clearInterval(refreshInterval);
+        });
+    </script>
+</body>
+</html>
