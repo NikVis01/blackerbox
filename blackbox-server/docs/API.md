@@ -90,8 +90,17 @@ Content-Type: application/json
 | `fragmentation_ratio` | float | Memory fragmentation ratio (0-1) |
 | `processes` | array | GPU processes array |
 | `threads` | array | Empty array (removed - was redundant mapping of processes) |
-| `blocks` | array | Memory block details array |
+| `blocks` | array | Memory block details array (each block has a `size` field in bytes) |
 | `nsight_metrics` | object | Nsight Compute metrics per PID |
+
+**Blocks to Bytes Relationship:**
+- **Block size** is calculated dynamically: `block_size_bytes = process_gpu_memory_bytes / num_allocated_blocks`
+- Each block in the `blocks` array has a `size` field containing its size in bytes
+- **Total block memory** = `allocated_blocks × block_size_bytes`
+- **Utilized block memory** = `utilized_blocks × block_size_bytes`
+- **Free block memory** = `free_blocks × block_size_bytes`
+- Block size typically ranges from ~16KB to several MB depending on model and configuration
+- Example: If `allocated_blocks=1000` and `block.size=16384` bytes, total block memory = 16MB
 
 #### Process Object
 
@@ -144,7 +153,7 @@ Content-Type: application/json
 |-------|------|-------------|
 | `block_id` | integer | Block identifier (0 to `allocated_blocks-1`) |
 | `address` | integer | Memory address (0 if unknown, vLLM doesn't expose addresses) |
-| `size` | integer | Block size in bytes (calculated from NVML process memory / num_blocks) |
+| `size` | integer | Block size in bytes (calculated as: `process_gpu_memory_bytes / num_allocated_blocks`) |
 | `type` | string | Block type ("kv_cache" for vLLM blocks) |
 | `allocated` | boolean | Whether block is allocated (always `true` for vLLM blocks) |
 | `utilized` | boolean | Whether block is actively storing data (from vLLM's `kv_cache_usage_perc`) |
