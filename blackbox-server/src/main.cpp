@@ -94,17 +94,42 @@ static bool g_nvml_initialized = false;
 bool initNVML() {
     if (g_nvml_initialized) return true;
 #ifdef NVML_AVAILABLE
-    if (nvmlInit() == NVML_SUCCESS) {
-        unsigned int deviceCount;
-        if (nvmlDeviceGetCount(&deviceCount) == NVML_SUCCESS && deviceCount > 0) {
-            if (nvmlDeviceGetHandleByIndex(0, &g_device) == NVML_SUCCESS) {
-                g_nvml_initialized = true;
-                return true;
-            }
-        }
+    nvmlReturn_t result = nvmlInit();
+    if (result != NVML_SUCCESS) {
+        std::cerr << "[NVML] Initialization failed: " << nvmlErrorString(result) << std::endl;
+        return false;
     }
-#endif
+    
+    unsigned int deviceCount = 0;
+    result = nvmlDeviceGetCount(&deviceCount);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "[NVML] Failed to get device count: " << nvmlErrorString(result) << std::endl;
+        nvmlShutdown();
+        return false;
+    }
+    
+    if (deviceCount == 0) {
+        std::cerr << "[NVML] No GPU devices found" << std::endl;
+        nvmlShutdown();
+        return false;
+    }
+    
+    std::cout << "[NVML] Found " << deviceCount << " GPU device(s)" << std::endl;
+    
+    result = nvmlDeviceGetHandleByIndex(0, &g_device);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "[NVML] Failed to get device handle: " << nvmlErrorString(result) << std::endl;
+        nvmlShutdown();
+        return false;
+    }
+    
+    g_nvml_initialized = true;
+    std::cout << "[NVML] Initialized successfully" << std::endl;
+    return true;
+#else
+    std::cerr << "[NVML] NVML not available (compiled without NVML support)" << std::endl;
     return false;
+#endif
 }
 
 void shutdownNVML() {
@@ -259,7 +284,10 @@ VLLMBlockData fetchVLLMBlockData() {
 // - Process-level VRAM usage by PID
 DetailedVRAMInfo getDetailedVRAMUsage() {
     DetailedVRAMInfo detailed = {0, 0, 0, 0, {}, {}, {}, 0, 0, 0, 0ULL, 0.0, {}};
-    if (!initNVML()) return detailed;
+    if (!initNVML()) {
+        std::cerr << "[DEBUG] NVML not initialized, returning empty data" << std::endl;
+        return detailed;
+    }
 #ifdef NVML_AVAILABLE
     nvmlMemory_t memory;
     if (nvmlDeviceGetMemoryInfo(g_device, &memory) == NVML_SUCCESS) {
