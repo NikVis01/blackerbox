@@ -71,6 +71,6 @@ var statCmd = &cobra.Command{
 
 func init() {
 	statCmd.Flags().BoolVar(&statFlags.watch, "watch", false, "watch snapshots continuously")
-	statCmd.Flags().StringVar(&statFlags.interval, "interval", "1s", "watch interval (e.g. 1s, 250ms)")
+	statCmd.Flags().StringVar(&statFlags.interval, "interval", "3s", "watch interval (e.g. 3s, 1s)")
 	statCmd.Flags().BoolVar(&statFlags.compact, "compact", false, "print compact JSON (no indentation)")
 }

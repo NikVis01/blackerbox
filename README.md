@@ -66,11 +66,13 @@ blackbox
 - `--url <url>`: Server URL (default: `http://127.0.0.1:8080`)
 - `--endpoint <path>`: API endpoint (default: `/vram`)
 - `--timeout <duration>`: HTTP timeout (default: `10s`)
+- `--interval <duration>`: Polling interval for dashboard (default: `5s`)
 
 **Examples:**
 ```bash
 blackbox --url http://192.168.1.100:6767
 blackbox stat --compact
+blackbox stat --watch --interval 5s
 ```
 
 ### Configuration
