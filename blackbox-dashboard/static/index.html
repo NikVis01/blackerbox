@@ -223,9 +223,9 @@
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
             gap: 30px;
         }
-        .chart-box { background: #f8f9fa; border-radius: 15px; padding: 20px; }
+        .chart-box { background: #f8f9fa; border-radius: 15px; padding: 20px; transition: opacity 0.15s ease; }
         .chart-box h3 { font-size: 1.1rem; color: #333; margin-bottom: 15px; }
-        .chart-container { position: relative; height: 300px; }
+        .chart-container { position: relative; height: 300px; transition: opacity 0.15s ease; }
 
         .message { padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; color: white; }
         .error { background: #ff6b6b; }
@@ -274,6 +274,34 @@
             border-color: #667eea;
             color: white;
         }
+
+        .auto-refresh-indicator {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(102, 126, 234, 0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -281,7 +309,7 @@
         <h1>🎯 KV-Cache Monitor</h1>
         <div id="message-container"></div>
         <div id="nodes-container" class="nodes-grid"></div>
-        <div class="refresh-info">Auto-refresh every 5 seconds</div>
+        <div class="refresh-info">Auto-refresh every 2 seconds</div>
     </div>
 
     <button class="add-node-btn" onclick="openAddModal()">+</button>
@@ -328,12 +356,13 @@
 
     <script>
         const API_BASE = '/api';
-        const REFRESH_INTERVAL = 5000;
+        const REFRESH_INTERVAL = 2000;  // 2 seconds
 
         let nodes = [];
         let charts = {};
         let detailCharts = {};
         let refreshTimer = null;
+        let detailRefreshTimer = null;
         let currentNode = null;
         let currentTimeRange = 3600; // Default: 1 hour in seconds
 
@@ -591,29 +620,35 @@
             ];
 
             const controls = `
-                <div class="node-controls">
-                    <div class="node-controls-left">
-                        <span class="node-status-badge ${currentNode.enabled ? 'enabled' : 'disabled'}">
-                            ${currentNode.enabled ? 'Enabled' : 'Disabled'}
-                        </span>
-                        <span style="color: #666;">${currentNode.host}:${currentNode.port}</span>
+                <div style="position: relative;">
+                    <div class="auto-refresh-indicator">
+                        <div class="refresh-dot"></div>
+                        <span>Auto-refresh: 2s</span>
                     </div>
-                    <div class="node-controls-right">
-                        <button class="btn-small btn-toggle ${!currentNode.enabled ? 'disabled' : ''}" onclick="toggleNode()">
-                            ${currentNode.enabled ? 'Disable' : 'Enable'} Tracking
-                        </button>
-                        <button class="btn-small btn-edit" onclick="editNode()">Edit</button>
-                        <button class="btn-small btn-delete" onclick="deleteNode()">Delete</button>
+                    <div class="node-controls">
+                        <div class="node-controls-left">
+                            <span class="node-status-badge ${currentNode.enabled ? 'enabled' : 'disabled'}">
+                                ${currentNode.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                            <span style="color: #666;">${currentNode.host}:${currentNode.port}</span>
+                        </div>
+                        <div class="node-controls-right">
+                            <button class="btn-small btn-toggle ${!currentNode.enabled ? 'disabled' : ''}" onclick="toggleNode()">
+                                ${currentNode.enabled ? 'Disable' : 'Enable'} Tracking
+                            </button>
+                            <button class="btn-small btn-edit" onclick="editNode()">Edit</button>
+                            <button class="btn-small btn-delete" onclick="deleteNode()">Delete</button>
+                        </div>
                     </div>
-                </div>
-                <div class="time-range-selector">
-                    <span style="color: #666; margin-right: 10px; font-weight: 500;">Time Range:</span>
-                    <button class="time-range-btn ${currentTimeRange === 3600 ? 'active' : ''}" onclick="changeTimeRange(3600)">1h</button>
-                    <button class="time-range-btn ${currentTimeRange === 10800 ? 'active' : ''}" onclick="changeTimeRange(10800)">3h</button>
-                    <button class="time-range-btn ${currentTimeRange === 21600 ? 'active' : ''}" onclick="changeTimeRange(21600)">6h</button>
-                    <button class="time-range-btn ${currentTimeRange === 43200 ? 'active' : ''}" onclick="changeTimeRange(43200)">12h</button>
-                    <button class="time-range-btn ${currentTimeRange === 86400 ? 'active' : ''}" onclick="changeTimeRange(86400)">24h</button>
-                    <button class="time-range-btn ${currentTimeRange === 604800 ? 'active' : ''}" onclick="changeTimeRange(604800)">7d</button>
+                    <div class="time-range-selector">
+                        <span style="color: #666; margin-right: 10px; font-weight: 500;">Time Range:</span>
+                        <button class="time-range-btn ${currentTimeRange === 3600 ? 'active' : ''}" onclick="changeTimeRange(3600)">1h</button>
+                        <button class="time-range-btn ${currentTimeRange === 10800 ? 'active' : ''}" onclick="changeTimeRange(10800)">3h</button>
+                        <button class="time-range-btn ${currentTimeRange === 21600 ? 'active' : ''}" onclick="changeTimeRange(21600)">6h</button>
+                        <button class="time-range-btn ${currentTimeRange === 43200 ? 'active' : ''}" onclick="changeTimeRange(43200)">12h</button>
+                        <button class="time-range-btn ${currentTimeRange === 86400 ? 'active' : ''}" onclick="changeTimeRange(86400)">24h</button>
+                        <button class="time-range-btn ${currentTimeRange === 604800 ? 'active' : ''}" onclick="changeTimeRange(604800)">7d</button>
+                    </div>
                 </div>
             `;
 
@@ -637,6 +672,25 @@
             }
 
             console.log(`[openDetail] All charts created`);
+
+            // Start auto-refresh for detail charts
+            startDetailRefresh(nodeId, metrics);
+        }
+
+        function startDetailRefresh(nodeId, metrics) {
+            // Clear any existing timer
+            if (detailRefreshTimer) {
+                clearInterval(detailRefreshTimer);
+            }
+
+            // Refresh charts every 2 seconds
+            detailRefreshTimer = setInterval(async () => {
+                console.log(`[detailRefresh] Updating charts for node ${nodeId}`);
+                for (const m of metrics) {
+                    const data = await fetchTimeseries(nodeId, m.key, currentTimeRange);
+                    updateDetailChart(`detail-${m.key}`, data, m.color, currentTimeRange);
+                }
+            }, REFRESH_INTERVAL);
         }
 
         async function changeTimeRange(duration) {
@@ -668,6 +722,9 @@
                 const data = await fetchTimeseries(nodeId, m.key, currentTimeRange);
                 createDetailChart(`detail-${m.key}`, data, m.color, currentTimeRange);
             }
+
+            // Restart auto-refresh with new time range
+            startDetailRefresh(nodeId, metrics);
         }
 
         function createDetailChart(canvasId, data, color, duration = currentTimeRange) {
@@ -743,8 +800,48 @@
             });
         }
 
+        function updateDetailChart(canvasId, data, color, duration = currentTimeRange) {
+            const chart = detailCharts[canvasId];
+            if (!chart) {
+                console.warn(`[updateDetailChart] Chart not found: ${canvasId}, creating new one`);
+                createDetailChart(canvasId, data, color, duration);
+                return;
+            }
+
+            const now = new Date();
+            const startTime = new Date(now - duration * 1000);
+
+            // Update data
+            chart.data.labels = data.map(d => new Date(d.timestamp));
+            chart.data.datasets[0].data = data.map(d => d.value);
+            chart.data.datasets[0].pointRadius = data.length > 100 ? 0 : 2;
+
+            // Update time axis
+            chart.options.scales.x.min = startTime;
+            chart.options.scales.x.max = now;
+
+            // Update chart without animation for smoother updates
+            chart.update('none');
+
+            // Brief visual feedback on update
+            const canvas = chart.canvas;
+            if (canvas && canvas.parentElement) {
+                canvas.parentElement.style.opacity = '0.7';
+                setTimeout(() => {
+                    canvas.parentElement.style.opacity = '1';
+                }, 100);
+            }
+        }
+
         function closeDetailModal() {
             document.getElementById('detailModal').classList.remove('active');
+
+            // Stop auto-refresh
+            if (detailRefreshTimer) {
+                clearInterval(detailRefreshTimer);
+                detailRefreshTimer = null;
+            }
+
             Object.values(detailCharts).forEach(c => c.destroy());
             detailCharts = {};
             currentNode = null;
