@@ -13,7 +13,7 @@ The `/vram` endpoint returns a JSON object with the following structure:
   "free_bytes": 8388608000,
   "reserved_bytes": 34561064960,
   "used_percent": 80.45,
-  "active_blocks": 14401,
+  "allocated_blocks": 14401,
   "utilized_blocks": 0,
   "free_blocks": 14401,
   "atomic_allocations_bytes": 31299958784,
@@ -65,15 +65,15 @@ The `/vram` endpoint returns a JSON object with the following structure:
 - **`free_bytes`**: Free GPU memory (from NVML)
 - **`reserved_bytes`**: Reserved GPU memory (from NVML)
 - **`used_percent`**: Memory usage percentage (0-100)
-- **`active_blocks`**: Total allocated KV cache blocks (from vLLM)
+- **`allocated_blocks`**: Total allocated KV cache blocks (from vLLM)
 - **`utilized_blocks`**: Blocks actively storing data (calculated from vLLM's `kv_cache_usage_perc`)
-- **`free_blocks`**: Allocated but unused blocks (calculated: `active_blocks - utilized_blocks`)
+- **`free_blocks`**: Allocated but unused blocks (calculated: `allocated_blocks - utilized_blocks`)
 - **`atomic_allocations_bytes`**: Sum of all process memory allocations (from NVML)
 - **`fragmentation_ratio`**: Memory fragmentation (0-1, calculated)
 - **`processes`**: Array of GPU processes with PID, name, and memory usage (from NVML)
 - **`threads`**: Empty array (removed - was redundant 1:1 mapping of processes)
 - **`blocks`**: Array of memory blocks with allocation and utilization status
-  - **`block_id`**: Block identifier (0 to `active_blocks-1`)
+  - **`block_id`**: Block identifier (0 to `allocated_blocks-1`)
   - **`address`**: Memory address (0 if unknown)
   - **`size`**: Block size in bytes (calculated from NVML process memory / num_blocks)
   - **`type`**: Block type ("kv_cache" for vLLM blocks)
