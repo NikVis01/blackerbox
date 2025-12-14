@@ -18,10 +18,16 @@
 
         .container { max-width: 1400px; margin: 0 auto; }
 
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
         h1 {
             color: white;
-            text-align: center;
-            margin-bottom: 40px;
+            margin: 0;
             font-size: 2.5rem;
             text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
@@ -104,21 +110,24 @@
         .chart-title { font-size: 0.85rem; color: #999; text-align: center; margin-bottom: 8px; }
 
         .add-node-btn {
-            position: fixed;
-            bottom: 40px;
-            right: 40px;
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: white;
+            color: #667eea;
             border: none;
-            border-radius: 50%;
-            font-size: 2rem;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .add-node-btn:hover { transform: scale(1.1); }
+        .add-node-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
 
         .modal {
             display: none;
@@ -295,24 +304,400 @@
             height: 8px;
             background: #667eea;
             border-radius: 50%;
-            animation: pulse 2s ease-in-out infinite;
+            animation: pulse 5s ease-in-out infinite;
         }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+
+        /* Chat Interface */
+        .chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 30px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            max-height: 600px;
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        .chat-container.minimized {
+            transform: translateY(calc(100% - 60px));
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 20px 20px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .chat-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chat-toggle-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chat-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .chat-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+            min-height: 300px;
+            max-height: 400px;
+        }
+
+        .chat-message {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .chat-message.user {
+            align-items: flex-end;
+        }
+
+        .chat-message.assistant {
+            align-items: flex-start;
+        }
+
+        .chat-bubble {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            word-wrap: break-word;
+        }
+
+        .chat-message.user .chat-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .chat-message.assistant .chat-bubble {
+            background: white;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .chat-loading {
+            display: flex;
+            gap: 5px;
+            padding: 10px;
+        }
+
+        .chat-loading span {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .chat-loading span:nth-child(1) { animation-delay: -0.32s; }
+        .chat-loading span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        .chat-suggestions {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .suggestion-btn {
+            padding: 6px 12px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .suggestion-btn:hover {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+
+        .chat-input-container {
+            padding: 15px 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .chat-send-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chat-send-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .chat-send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .node-selector {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .node-selector-label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .node-selection-count {
+            font-size: 0.75rem;
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .node-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .node-checkbox.selected {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .node-checkbox input {
+            cursor: pointer;
+        }
+
+        .stats-summary {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stats-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        /* Node-specific chat in detail modal */
+        .detail-chat {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .detail-chat-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .detail-chat-body {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+        }
+
+        .detail-chat-input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .detail-chat-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎯 KV-Cache Monitor</h1>
+        <div class="navbar">
+            <h1>🎯 KV-Cache Monitor</h1>
+            <button class="add-node-btn" onclick="openAddModal()">
+                <span style="font-size: 1.5rem;">+</span>
+                <span>Add Node</span>
+            </button>
+        </div>
         <div id="message-container"></div>
         <div id="nodes-container" class="nodes-grid"></div>
-        <div class="refresh-info">Auto-refresh every 2 seconds</div>
+        <div class="refresh-info">Auto-refresh every 5 seconds</div>
     </div>
 
-    <button class="add-node-btn" onclick="openAddModal()">+</button>
+    <!-- Chat Interface -->
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header" onclick="toggleChat()">
+            <h3>💬 AI Assistant</h3>
+            <button class="chat-toggle-btn" id="chatToggleBtn">−</button>
+        </div>
+
+        <div class="node-selector" id="nodeSelector">
+            <span class="node-selector-label">Analyze:</span>
+            <label class="node-checkbox selected" id="allNodesCheckbox">
+                <input type="checkbox" checked onchange="toggleAllNodes(this)"> All Nodes
+            </label>
+            <span class="node-selection-count" id="nodeSelectionCount" style="display: none;"></span>
+            <div id="nodeSelectorList" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
+
+        <div class="chat-suggestions" id="chatSuggestions">
+            <button class="suggestion-btn" onclick="askQuestion('What does my KV-cache utilization tell me?')">
+                KV-cache analysis
+            </button>
+            <button class="suggestion-btn" onclick="askQuestion('What are your recommendations?')">
+                Get recommendations
+            </button>
+            <button class="suggestion-btn" onclick="askQuestion('Are there any performance issues?')">
+                Performance check
+            </button>
+            <button class="suggestion-btn" onclick="askQuestion('Explain memory fragmentation')">
+                Memory status
+            </button>
+        </div>
+
+        <div class="chat-body" id="chatBody">
+            <div class="chat-message assistant">
+                <div class="chat-bubble">
+                    Hi! I can analyze your GPU metrics and answer questions about KV-cache utilization, memory usage, and performance. Try one of the suggestions below or ask me anything!
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-container">
+            <input
+                type="text"
+                class="chat-input"
+                id="chatInput"
+                placeholder="Ask about your GPU metrics..."
+                onkeypress="if(event.key==='Enter') sendMessage()"
+            >
+            <button class="chat-send-btn" id="chatSendBtn" onclick="sendMessage()">➤</button>
+        </div>
+    </div>
 
     <!-- Add Node Modal -->
     <div id="addNodeModal" class="modal">
@@ -356,7 +741,7 @@
 
     <script>
         const API_BASE = '/api';
-        const REFRESH_INTERVAL = 2000;  // 2 seconds
+        const REFRESH_INTERVAL = 5000;  // 5 seconds
 
         let nodes = [];
         let charts = {};
@@ -389,6 +774,37 @@
             return data;
         }
 
+        async function fetchNodeStats(nodeId, duration = currentTimeRange) {
+            try {
+                const [kvData, memData, fragData] = await Promise.all([
+                    fetchTimeseries(nodeId, 'kv_cache_utilization', duration),
+                    fetchTimeseries(nodeId, 'vllm_memory_utilization', duration),
+                    fetchTimeseries(nodeId, 'memory_fragmentation', duration)
+                ]);
+
+                if (kvData.length === 0) return null;
+
+                const kvValues = kvData.map(d => d.value);
+                const memValues = memData.map(d => d.value);
+                const fragValues = fragData.map(d => d.value);
+
+                return {
+                    kv_avg: kvValues.reduce((a, b) => a + b, 0) / kvValues.length,
+                    kv_max: Math.max(...kvValues),
+                    kv_min: Math.min(...kvValues),
+                    mem_avg: memValues.reduce((a, b) => a + b, 0) / memValues.length,
+                    mem_max: Math.max(...memValues),
+                    mem_min: Math.min(...memValues),
+                    frag_avg: fragValues.reduce((a, b) => a + b, 0) / fragValues.length,
+                    frag_max: Math.max(...fragValues),
+                    count: kvData.length
+                };
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+                return null;
+            }
+        }
+
         // === UTILITIES ===
         function showMessage(msg, type = 'error') {
             const container = document.getElementById('message-container');
@@ -401,6 +817,17 @@
             if (diff < 60) return `${diff}s ago`;
             if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
             return new Date(timestamp).toLocaleTimeString();
+        }
+
+        function getTimeRangeLabel(duration) {
+            if (duration === 300) return '5 minutes';
+            if (duration === 3600) return '1 hour';
+            if (duration === 10800) return '3 hours';
+            if (duration === 21600) return '6 hours';
+            if (duration === 43200) return '12 hours';
+            if (duration === 86400) return '24 hours';
+            if (duration === 604800) return '7 days';
+            return `${duration}s`;
         }
 
         function calcUtilization(snapshot) {
@@ -619,11 +1046,14 @@
                 { key: 'num_processes', title: 'Number of Processes', color: '#339af0' }
             ];
 
+            // Fetch stats for average calculation
+            const statsData = await fetchNodeStats(nodeId, currentTimeRange);
+
             const controls = `
                 <div style="position: relative;">
                     <div class="auto-refresh-indicator">
                         <div class="refresh-dot"></div>
-                        <span>Auto-refresh: 2s</span>
+                        <span>Auto-refresh: 5s</span>
                     </div>
                     <div class="node-controls">
                         <div class="node-controls-left">
@@ -642,6 +1072,7 @@
                     </div>
                     <div class="time-range-selector">
                         <span style="color: #666; margin-right: 10px; font-weight: 500;">Time Range:</span>
+                        <button class="time-range-btn ${currentTimeRange === 300 ? 'active' : ''}" onclick="changeTimeRange(300)">5m</button>
                         <button class="time-range-btn ${currentTimeRange === 3600 ? 'active' : ''}" onclick="changeTimeRange(3600)">1h</button>
                         <button class="time-range-btn ${currentTimeRange === 10800 ? 'active' : ''}" onclick="changeTimeRange(10800)">3h</button>
                         <button class="time-range-btn ${currentTimeRange === 21600 ? 'active' : ''}" onclick="changeTimeRange(21600)">6h</button>
@@ -649,6 +1080,37 @@
                         <button class="time-range-btn ${currentTimeRange === 86400 ? 'active' : ''}" onclick="changeTimeRange(86400)">24h</button>
                         <button class="time-range-btn ${currentTimeRange === 604800 ? 'active' : ''}" onclick="changeTimeRange(604800)">7d</button>
                     </div>
+                    ${statsData ? `
+                    <div class="stats-summary">
+                        <div class="stats-header">📊 Period Statistics (${getTimeRangeLabel(currentTimeRange)})</div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Avg KV-Cache:</span>
+                                <span class="stat-value">${statsData.kv_avg.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Max KV-Cache:</span>
+                                <span class="stat-value">${statsData.kv_max.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Memory:</span>
+                                <span class="stat-value">${statsData.mem_avg.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Max Memory:</span>
+                                <span class="stat-value">${statsData.mem_max.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Fragmentation:</span>
+                                <span class="stat-value">${(statsData.frag_avg * 100).toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Data Points:</span>
+                                <span class="stat-value">${statsData.count}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
             `;
 
@@ -661,7 +1123,41 @@
                 </div>
             `).join('');
 
-            document.getElementById('detailContent').innerHTML = controls + '<div class="charts-grid">' + chartsHtml + '</div>';
+            const chatHtml = `
+                <div class="detail-chat">
+                    <div class="detail-chat-header">💬 Ask AI about this node</div>
+                    <div class="detail-chat-suggestions">
+                        <button class="suggestion-btn" onclick="askDetailQuestion('Analyze this node performance')">
+                            Performance Analysis
+                        </button>
+                        <button class="suggestion-btn" onclick="askDetailQuestion('What optimizations do you recommend?')">
+                            Optimization Tips
+                        </button>
+                        <button class="suggestion-btn" onclick="askDetailQuestion('Explain the current metrics')">
+                            Explain Metrics
+                        </button>
+                    </div>
+                    <div class="detail-chat-body" id="detailChatBody">
+                        <div class="chat-message assistant">
+                            <div class="chat-bubble">
+                                Ask me anything about ${nodeName}'s performance, KV-cache utilization, or get recommendations!
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-chat-input-container">
+                        <input
+                            type="text"
+                            class="chat-input"
+                            id="detailChatInput"
+                            placeholder="Ask about this node..."
+                            onkeypress="if(event.key==='Enter') sendDetailMessage()"
+                        >
+                        <button class="chat-send-btn" id="detailChatSendBtn" onclick="sendDetailMessage()">➤</button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detailContent').innerHTML = controls + '<div class="charts-grid">' + chartsHtml + '</div>' + chatHtml;
 
             console.log(`[openDetail] Fetching timeseries for ${metrics.length} metrics...`);
 
@@ -683,9 +1179,48 @@
                 clearInterval(detailRefreshTimer);
             }
 
-            // Refresh charts every 2 seconds
+            // Refresh charts and stats every 5 seconds
             detailRefreshTimer = setInterval(async () => {
-                console.log(`[detailRefresh] Updating charts for node ${nodeId}`);
+                console.log(`[detailRefresh] Updating charts and stats for node ${nodeId}`);
+
+                // Update stats summary
+                const statsData = await fetchNodeStats(nodeId, currentTimeRange);
+                if (statsData) {
+                    const statsContainer = document.querySelector('.stats-summary');
+                    if (statsContainer) {
+                        statsContainer.innerHTML = `
+                            <div class="stats-header">📊 Period Statistics (${getTimeRangeLabel(currentTimeRange)})</div>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Avg KV-Cache:</span>
+                                    <span class="stat-value">${statsData.kv_avg.toFixed(2)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Max KV-Cache:</span>
+                                    <span class="stat-value">${statsData.kv_max.toFixed(2)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Avg Memory:</span>
+                                    <span class="stat-value">${statsData.mem_avg.toFixed(2)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Max Memory:</span>
+                                    <span class="stat-value">${statsData.mem_max.toFixed(2)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Avg Fragmentation:</span>
+                                    <span class="stat-value">${(statsData.frag_avg * 100).toFixed(2)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Data Points:</span>
+                                    <span class="stat-value">${statsData.count}</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+
+                // Update charts
                 for (const m of metrics) {
                     const data = await fetchTimeseries(nodeId, m.key, currentTimeRange);
                     updateDetailChart(`detail-${m.key}`, data, m.color, currentTimeRange);
@@ -716,6 +1251,43 @@
                 btn.classList.remove('active');
             });
             event.target.classList.add('active');
+
+            // Reload stats summary with new time range
+            const statsData = await fetchNodeStats(nodeId, currentTimeRange);
+            if (statsData) {
+                const statsContainer = document.querySelector('.stats-summary');
+                if (statsContainer) {
+                    statsContainer.innerHTML = `
+                        <div class="stats-header">📊 Period Statistics (${getTimeRangeLabel(currentTimeRange)})</div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Avg KV-Cache:</span>
+                                <span class="stat-value">${statsData.kv_avg.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Max KV-Cache:</span>
+                                <span class="stat-value">${statsData.kv_max.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Memory:</span>
+                                <span class="stat-value">${statsData.mem_avg.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Max Memory:</span>
+                                <span class="stat-value">${statsData.mem_max.toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Fragmentation:</span>
+                                <span class="stat-value">${(statsData.frag_avg * 100).toFixed(2)}%</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Data Points:</span>
+                                <span class="stat-value">${statsData.count}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
 
             // Reload all charts with new time range
             for (const m of metrics) {
@@ -753,6 +1325,9 @@
             } else if (duration > 7200) { // > 2 hours
                 timeUnit = 'hour';
                 displayFormat = 'HH:mm';
+            } else if (duration <= 600) { // <= 10 minutes
+                timeUnit = 'minute';
+                displayFormat = 'HH:mm:ss';
             }
 
             const chartData = {
@@ -788,7 +1363,8 @@
                             time: {
                                 unit: timeUnit,
                                 displayFormats: {
-                                    minute: 'HH:mm',
+                                    second: 'HH:mm:ss',
+                                    minute: displayFormat,
                                     hour: 'HH:mm',
                                     day: 'MMM dd'
                                 }
@@ -932,9 +1508,316 @@
             }
         }
 
+        // === CHAT INTERFACE ===
+        let selectedNodeIds = [];  // Empty means all nodes
+        let chatMinimized = false;
+
+        function toggleChat() {
+            const container = document.getElementById('chatContainer');
+            const btn = document.getElementById('chatToggleBtn');
+            chatMinimized = !chatMinimized;
+
+            if (chatMinimized) {
+                container.classList.add('minimized');
+                btn.textContent = '+';
+            } else {
+                container.classList.remove('minimized');
+                btn.textContent = '−';
+            }
+        }
+
+        function updateNodeSelector() {
+            const list = document.getElementById('nodeSelectorList');
+            if (!nodes || nodes.length === 0) {
+                list.innerHTML = '';
+                return;
+            }
+
+            // Only update if the node list has changed
+            const currentNodeIds = nodes.map(n => n.id).sort().join(',');
+            const existingNodeIds = Array.from(list.querySelectorAll('input[type="checkbox"]'))
+                .map(input => input.value)
+                .sort()
+                .join(',');
+
+            if (currentNodeIds === existingNodeIds) {
+                return; // No changes needed
+            }
+
+            // Rebuild node list
+            list.innerHTML = nodes.map(node => {
+                const isSelected = selectedNodeIds.includes(node.id);
+                return `
+                    <label class="node-checkbox ${isSelected ? 'selected' : ''}" id="node-check-${node.id}">
+                        <input type="checkbox" value="${node.id}" ${isSelected ? 'checked' : ''} onchange="toggleNodeSelection(${node.id}, this)">
+                        ${node.name}
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function updateSelectionCount() {
+            const countEl = document.getElementById('nodeSelectionCount');
+            if (selectedNodeIds.length === 0) {
+                countEl.style.display = 'none';
+            } else {
+                const totalEnabled = nodes.filter(n => n.enabled).length;
+                countEl.textContent = `${selectedNodeIds.length} of ${totalEnabled} nodes`;
+                countEl.style.display = 'block';
+            }
+        }
+
+        function toggleAllNodes(checkbox) {
+            const allCheckbox = document.getElementById('allNodesCheckbox');
+            const nodeCheckboxes = document.querySelectorAll('#nodeSelectorList input[type="checkbox"]');
+
+            if (checkbox.checked) {
+                // "All Nodes" selected - clear individual selections
+                allCheckbox.classList.add('selected');
+                selectedNodeIds = [];
+                nodeCheckboxes.forEach(cb => {
+                    cb.checked = false;
+                    cb.parentElement.classList.remove('selected');
+                });
+                updateSelectionCount();
+                console.log('[Node Selector] All nodes selected');
+            } else {
+                // User unchecked "All Nodes" - they must select at least one individual node
+                // Don't allow unchecking if no nodes are selected
+                if (selectedNodeIds.length === 0) {
+                    checkbox.checked = true;
+                    allCheckbox.classList.add('selected');
+                    console.log('[Node Selector] Cannot uncheck "All Nodes" without selecting individual nodes');
+                } else {
+                    allCheckbox.classList.remove('selected');
+                    updateSelectionCount();
+                }
+            }
+        }
+
+        function toggleNodeSelection(nodeId, checkbox) {
+            const allCheckbox = document.getElementById('allNodesCheckbox');
+            const allCheckboxInput = allCheckbox.querySelector('input');
+            const nodeCheckbox = document.getElementById(`node-check-${nodeId}`);
+
+            if (checkbox.checked) {
+                // Add node to selection
+                if (!selectedNodeIds.includes(nodeId)) {
+                    selectedNodeIds.push(nodeId);
+                }
+                nodeCheckbox.classList.add('selected');
+
+                // Uncheck "All Nodes"
+                allCheckboxInput.checked = false;
+                allCheckbox.classList.remove('selected');
+
+                updateSelectionCount();
+                console.log(`[Node Selector] Selected nodes: ${selectedNodeIds.join(', ')}`);
+            } else {
+                // Remove node from selection
+                selectedNodeIds = selectedNodeIds.filter(id => id !== nodeId);
+                nodeCheckbox.classList.remove('selected');
+
+                // If no nodes selected, revert to "All Nodes"
+                if (selectedNodeIds.length === 0) {
+                    allCheckboxInput.checked = true;
+                    allCheckbox.classList.add('selected');
+                    console.log('[Node Selector] No nodes selected, reverting to All Nodes');
+                } else {
+                    console.log(`[Node Selector] Selected nodes: ${selectedNodeIds.join(', ')}`);
+                }
+
+                updateSelectionCount();
+            }
+        }
+
+        function addChatMessage(message, isUser = false) {
+            const chatBody = document.getElementById('chatBody');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble';
+            bubble.textContent = message;
+
+            messageDiv.appendChild(bubble);
+            chatBody.appendChild(messageDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function showChatLoading() {
+            const chatBody = document.getElementById('chatBody');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'chat-message assistant';
+            loadingDiv.id = 'chat-loading';
+            loadingDiv.innerHTML = `
+                <div class="chat-loading">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            chatBody.appendChild(loadingDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function removeChatLoading() {
+            const loading = document.getElementById('chat-loading');
+            if (loading) loading.remove();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('chatSendBtn');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Add user message
+            addChatMessage(message, true);
+            input.value = '';
+
+            // Disable input while processing
+            input.disabled = true;
+            sendBtn.disabled = true;
+            showChatLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        node_ids: selectedNodeIds.length > 0 ? selectedNodeIds : null
+                    })
+                });
+
+                removeChatLoading();
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addChatMessage(data.response, false);
+                } else {
+                    const error = await response.json();
+                    addChatMessage(`Error: ${error.detail || 'Failed to get response'}`, false);
+                }
+            } catch (error) {
+                removeChatLoading();
+                addChatMessage(`Error: ${error.message}. Make sure Claude API key is set in .env file.`, false);
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        function askQuestion(question) {
+            const input = document.getElementById('chatInput');
+            input.value = question;
+            sendMessage();
+        }
+
+        // Detail modal chat functions
+        function addDetailChatMessage(message, isUser = false) {
+            const chatBody = document.getElementById('detailChatBody');
+            if (!chatBody) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble';
+            bubble.textContent = message;
+
+            messageDiv.appendChild(bubble);
+            chatBody.appendChild(messageDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function showDetailChatLoading() {
+            const chatBody = document.getElementById('detailChatBody');
+            if (!chatBody) return;
+
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'chat-message assistant';
+            loadingDiv.id = 'detail-chat-loading';
+            loadingDiv.innerHTML = `
+                <div class="chat-loading">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            chatBody.appendChild(loadingDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function removeDetailChatLoading() {
+            const loading = document.getElementById('detail-chat-loading');
+            if (loading) loading.remove();
+        }
+
+        async function sendDetailMessage() {
+            if (!currentNode) return;
+
+            const input = document.getElementById('detailChatInput');
+            const sendBtn = document.getElementById('detailChatSendBtn');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Add user message
+            addDetailChatMessage(message, true);
+            input.value = '';
+
+            // Disable input while processing
+            input.disabled = true;
+            sendBtn.disabled = true;
+            showDetailChatLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        node_ids: [currentNode.id]
+                    })
+                });
+
+                removeDetailChatLoading();
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addDetailChatMessage(data.response, false);
+                } else {
+                    const error = await response.json();
+                    addDetailChatMessage(`Error: ${error.detail || 'Failed to get response'}`, false);
+                }
+            } catch (error) {
+                removeDetailChatLoading();
+                addDetailChatMessage(`Error: ${error.message}. Make sure Claude API key is set in .env file.`, false);
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        function askDetailQuestion(question) {
+            const input = document.getElementById('detailChatInput');
+            if (input) {
+                input.value = question;
+                sendDetailMessage();
+            }
+        }
+
         // === INIT ===
         updateDashboard();
         refreshTimer = setInterval(updateDashboard, REFRESH_INTERVAL);
+
+        // Update node selector periodically
+        setInterval(updateNodeSelector, REFRESH_INTERVAL);
 
         document.getElementById('addNodeModal').addEventListener('click', e => {
             if (e.target.id === 'addNodeModal') closeAddModal();

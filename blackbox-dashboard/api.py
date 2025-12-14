@@ -16,11 +16,25 @@ import requests
 import threading
 import time
 import sys
+from dotenv import load_dotenv
+import anthropic
 
 from database import (
     init_db, get_session,
     Node, VRAMSnapshot, Process, Thread, Block, NsightMetric
 )
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Claude client
+try:
+    claude_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    CLAUDE_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Claude API not available: {e}", file=sys.stderr)
+    claude_client = None
+    CLAUDE_AVAILABLE = False
 
 
 # ============================================================================
@@ -1006,6 +1020,154 @@ async def cleanup_old_snapshots(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+# ============================================================================
+# Claude AI Chat Integration
+# ============================================================================
+
+class ChatMessage(BaseModel):
+    message: str
+    node_ids: Optional[List[int]] = None  # Specific nodes to analyze, None = all nodes
+
+
+class ChatResponse(BaseModel):
+    response: str
+    available: bool = True
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_with_claude(chat: ChatMessage):
+    """
+    Chat with Claude AI to analyze GPU metrics and answer questions.
+    Can analyze specific nodes or all nodes.
+    """
+    if not CLAUDE_AVAILABLE or not claude_client:
+        raise HTTPException(
+            status_code=503,
+            detail="Claude API is not configured. Please set ANTHROPIC_API_KEY in .env file."
+        )
+
+    db = get_session()
+    try:
+        # Get nodes to analyze
+        if chat.node_ids:
+            nodes = db.query(Node).filter(Node.id.in_(chat.node_ids)).all()
+        else:
+            nodes = db.query(Node).filter(Node.enabled == True).all()
+
+        if not nodes:
+            raise HTTPException(status_code=404, detail="No nodes found")
+
+        # Collect current metrics for all nodes
+        metrics_data = []
+        for node in nodes:
+            # Get latest snapshot
+            snapshot = db.query(VRAMSnapshot).filter(
+                VRAMSnapshot.node_id == node.id
+            ).order_by(desc(VRAMSnapshot.timestamp)).first()
+
+            if snapshot:
+                # Get recent history (last hour)
+                one_hour_ago = datetime.now() - timedelta(hours=1)
+                recent_snapshots = db.query(VRAMSnapshot).filter(
+                    VRAMSnapshot.node_id == node.id,
+                    VRAMSnapshot.timestamp >= one_hour_ago
+                ).order_by(VRAMSnapshot.timestamp).all()
+
+                # Calculate statistics
+                if recent_snapshots:
+                    kv_utils = [s.kv_cache_utilization or 0 for s in recent_snapshots]
+                    mem_utils = [s.vllm_memory_utilization or 0 for s in recent_snapshots]
+
+                    node_data = {
+                        "name": node.name,
+                        "host": f"{node.host}:{node.port}",
+                        "current": {
+                            "kv_cache_utilization": snapshot.kv_cache_utilization,
+                            "allocated_blocks": snapshot.allocated_blocks,
+                            "utilized_blocks": snapshot.utilized_blocks,
+                            "free_blocks": snapshot.free_blocks,
+                            "vllm_memory_utilization": snapshot.vllm_memory_utilization,
+                            "total_bytes": snapshot.total_bytes,
+                            "used_bytes": snapshot.used_bytes,
+                            "memory_fragmentation": snapshot.memory_fragmentation,
+                            "num_processes": snapshot.num_processes,
+                        },
+                        "last_hour_stats": {
+                            "kv_cache_avg": sum(kv_utils) / len(kv_utils),
+                            "kv_cache_min": min(kv_utils),
+                            "kv_cache_max": max(kv_utils),
+                            "memory_avg": sum(mem_utils) / len(mem_utils),
+                            "memory_min": min(mem_utils),
+                            "memory_max": max(mem_utils),
+                            "data_points": len(recent_snapshots)
+                        }
+                    }
+                    metrics_data.append(node_data)
+
+        if not metrics_data:
+            raise HTTPException(status_code=404, detail="No metrics data available")
+
+        # Prepare context for Claude
+        context = f"""You are analyzing GPU metrics for vLLM (GPU inference) servers. Here's the current data:
+
+{json.dumps(metrics_data, indent=2)}
+
+CRITICAL PERFORMANCE INDICATORS:
+
+**KV-Cache Utilization** (PRIMARY METRIC):
+- This is THE MOST IMPORTANT metric for vLLM performance
+- Formula: (utilized_blocks / allocated_blocks * 100)
+- High KV-cache utilization (>70%) = excellent GPU usage and efficiency
+- Medium utilization (40-70%) = good, but room for optimization
+- Low utilization (<40%) = poor efficiency, wasted resources
+- This directly indicates how well the GPU is being utilized for inference
+
+Other metrics:
+- Allocated Blocks: Total blocks reserved for KV-cache
+- Utilized Blocks: Blocks currently in use
+- Free Blocks: Allocated but unused blocks (waste if too high)
+- vLLM Memory Utilization: Percentage of total GPU memory being used
+- Memory Fragmentation: Ratio indicating how fragmented the memory is (0-1, higher = more fragmented)
+
+When analyzing performance:
+1. ALWAYS start by evaluating KV-cache utilization
+2. Low KV-cache utilization is the #1 sign of poor performance/efficiency
+3. High KV-cache utilization with low memory fragmentation = ideal state
+4. Provide specific recommendations based on KV-cache patterns
+
+User question: {chat.message}
+
+RESPONSE FORMAT:
+- Write in PLAIN TEXT ONLY - no markdown formatting whatsoever
+- Do NOT use: ** (bold), * (italics), ## (headers), # (headers), - (bullets), or any markdown symbols
+- Do NOT use asterisks or hashtags for any reason
+- Write naturally like you're speaking, use line breaks and spacing for readability
+- Keep responses concise (2-4 sentences)
+- Be specific with numbers when relevant
+- When discussing performance, PRIORITIZE KV-cache utilization analysis"""
+
+        # Call Claude API (using Haiku for faster responses)
+        message = claude_client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=800,
+            messages=[
+                {"role": "user", "content": context}
+            ]
+        )
+
+        response_text = message.content[0].text
+
+        return ChatResponse(response=response_text, available=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in chat endpoint: {e}", file=sys.stderr)
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
     finally:
         db.close()
 
