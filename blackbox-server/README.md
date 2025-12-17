@@ -39,6 +39,22 @@ curl http://localhost:6767/vram
 - CMake 3.15+
 - C++17 compiler
 
+## Configuration
+
+Copy `.env.example` to `.env` and configure your environment variables:
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+```
+
+**Required (for model deployment):**
+- `HF_TOKEN` - HuggingFace API token
+
+**Optional:**
+- `MAX_CONCURRENT_MODELS` - Maximum concurrent models (default: 3)
+- `GPU_TYPE` - GPU type override (T4, A100, H100, L40) or leave empty for auto-detection
+
 ## API Endpoints
 
 - `GET /vram` - JSON response with current metrics
