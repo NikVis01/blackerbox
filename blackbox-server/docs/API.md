@@ -259,6 +259,102 @@ for line in response.iter_lines():
 
 ---
 
+### POST /deploy
+
+Deploys a HuggingFace model using vLLM Docker container.
+
+**Request:**
+```http
+POST /deploy HTTP/1.1
+Host: localhost:6767
+Content-Type: application/json
+
+{
+  "model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "hf_token": "hf_xxxxxxxxxxxxx",
+  "port": 8000
+}
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model_id` | string | Yes | HuggingFace model identifier (e.g., "Qwen/Qwen2.5-7B-Instruct") |
+| `hf_token` | string | Yes | HuggingFace API token |
+| `port` | integer | No | Port to expose vLLM API (default: 8000) |
+
+**Response (Success):**
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "success": true,
+  "message": "Model deployed successfully. Container: abc123def456",
+  "container_id": "abc123def456",
+  "port": 8000
+}
+```
+
+**Response (Error):**
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "success": false,
+  "message": "model_id and hf_token are required"
+}
+```
+
+```http
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+
+{
+  "success": false,
+  "message": "Failed to validate model. Check model_id and HF token."
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:6767/deploy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "hf_token": "hf_xxxxxxxxxxxxx",
+    "port": 8000
+  }'
+```
+
+**Behavior:**
+- Validates the model exists on HuggingFace Hub using the provided token
+- Stops and removes any existing container with the same name
+- Creates a Docker container using `vllm/vllm-openai:latest` image
+- Runs the container in detached mode with GPU support
+- Exposes the vLLM OpenAI-compatible API on the specified port
+- Returns container ID for management
+
+**Container Naming:**
+- Container name format: `vllm-{model_id}` (special characters replaced with hyphens)
+- Example: `Qwen/Qwen2.5-7B-Instruct` → `vllm-Qwen-Qwen2-5-7B-Instruct`
+
+**Requirements:**
+- Docker must be installed and running
+- NVIDIA Docker runtime must be configured (`--runtime nvidia`)
+- HuggingFace token must have access to the model (if model is private)
+- Port must be available (default: 8000)
+
+**Notes:**
+- The deployment script is temporarily stored in `/tmp/deploy_*.sh`
+- Container runs with GPU access (`--gpus all`)
+- HuggingFace cache is mounted from `~/.cache/huggingface`
+- Container uses host IPC for better performance (`--ipc=host`)
+
+---
+
 ## Error Responses
 
 ### 404 Not Found

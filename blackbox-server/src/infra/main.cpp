@@ -1,5 +1,5 @@
-#include "http_server.h"
-#include "nvml_utils.h"
+#include "infra/http_server.h"
+#include "services/nvml_utils.h"
 #include <iostream>
 #include <stdexcept>
 

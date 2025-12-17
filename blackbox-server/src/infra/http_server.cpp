@@ -1,6 +1,7 @@
-#include "http_server.h"
-#include "nvml_utils.h"
-#include "json_serializer.h"
+#include "infra/http_server.h"
+#include "services/nvml_utils.h"
+#include "utils/json_serializer.h"
+#include "services/deploy_service.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/connect.hpp>
@@ -66,6 +67,7 @@ void handleStreamingRequest(tcp::socket& socket) {
     }
 }
 
+
 void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
     std::string target = std::string(req.target());
     
@@ -98,6 +100,11 @@ void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
                 }
                 throw;
             }
+            return;
+        }
+    } else if (req.method() == http::verb::post) {
+        if (target == "/deploy") {
+            handleDeployRequest(req, socket);
             return;
         }
     }

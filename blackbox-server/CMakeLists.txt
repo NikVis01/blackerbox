@@ -119,12 +119,16 @@ if(NVML_INCLUDE_DIR)
 endif()
 
 add_executable(blackbox-server
-    src/main.cpp
-    src/nvml_utils.cpp
-    src/vllm_client.cpp
-    src/nsight_utils.cpp
-    src/json_serializer.cpp
-    src/http_server.cpp
+    src/infra/main.cpp
+    src/infra/http_server.cpp
+    src/services/nvml_utils.cpp
+    src/services/vllm_client.cpp
+    src/services/nsight_utils.cpp
+    src/services/hf_deploy.cpp
+    src/services/deploy_service.cpp
+    src/utils/json_serializer.cpp
+    src/utils/json_parser.cpp
+    src/utils/env_utils.cpp
 )
 
 target_include_directories(blackbox-server PRIVATE
