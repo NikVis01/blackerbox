@@ -118,7 +118,18 @@ if(NVML_INCLUDE_DIR)
     endif()
 endif()
 
-add_executable(blackbox-server src/main.cpp)
+add_executable(blackbox-server
+    src/main.cpp
+    src/nvml_utils.cpp
+    src/vllm_client.cpp
+    src/nsight_utils.cpp
+    src/json_serializer.cpp
+    src/http_server.cpp
+)
+
+target_include_directories(blackbox-server PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 if(Boost_FOUND AND Boost_SYSTEM_FOUND)
     # Use system Boost
