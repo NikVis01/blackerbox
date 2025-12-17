@@ -1,0 +1,4 @@
+vllmConfig:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.9
+  tensor_parallel_size: 1

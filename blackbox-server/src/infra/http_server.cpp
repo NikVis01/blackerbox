@@ -2,6 +2,10 @@
 #include "services/nvml_utils.h"
 #include "utils/json_serializer.h"
 #include "services/deploy_service.h"
+#include "services/spindown_service.h"
+#include "services/optimization_service.h"
+#include "services/model_manager.h"
+#include "services/vram_tracker.h"
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/connect.hpp>
@@ -25,6 +29,15 @@ void handleStreamingRequest(tcp::socket& socket) {
         while (true) {
             try {
                 DetailedVRAMInfo info = getDetailedVRAMUsage();
+                
+                auto models = listDeployedModels();
+                for (const auto& model : models) {
+                    if (model.running && model.pid > 0) {
+                        double vram_percent = getModelVRAMUsagePercent(model.container_name, model.pid);
+                        updateModelVRAMUsage(model.container_name, vram_percent);
+                    }
+                }
+                
                 std::string json = createDetailedResponse(info);
                 
                 std::ostringstream event;
@@ -101,10 +114,19 @@ void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
                 throw;
             }
             return;
+        } else if (target == "/models") {
+            handleListModelsRequest(req, socket);
+            return;
         }
     } else if (req.method() == http::verb::post) {
         if (target == "/deploy") {
             handleDeployRequest(req, socket);
+            return;
+        } else if (target == "/spindown") {
+            handleSpindownRequest(req, socket);
+            return;
+        } else if (target == "/optimize") {
+            handleOptimizeRequest(req, socket);
             return;
         }
     }

@@ -28,7 +28,8 @@ curl http://localhost:6767/vram
 - Process-level memory tracking
 - Nsight Compute integration for detailed GPU metrics
 - Server-Sent Events (SSE) streaming support
-- HuggingFace model deployment via Docker
+- Smart HuggingFace model deployment with concurrent limits
+- Model lifecycle management (deploy/spindown)
 - Lightweight and fast
 
 ## Requirements
@@ -42,7 +43,10 @@ curl http://localhost:6767/vram
 
 - `GET /vram` - JSON response with current metrics
 - `GET /vram/stream` - SSE stream with real-time updates
-- `POST /deploy` - Deploy HuggingFace models using vLLM Docker
+- `POST /deploy` - Deploy HuggingFace models using vLLM Docker (with smart limits)
+- `POST /spindown` - Stop and remove deployed models
+- `GET /models` - List all deployed models and their status
+- `POST /optimize` - Optimize GPU utilization by restarting overallocated models
 
 See [API Reference](docs/API.md) for details.
 
@@ -56,5 +60,21 @@ curl -X POST http://localhost:6767/deploy \
     "hf_token": "hf_xxxxxxxxxxxxx",
     "port": 8000
   }'
+```
+
+**Note:** Deployment is limited by `MAX_CONCURRENT_MODELS` in `.env` (default: 3). Use `GET /models` to check current deployments.
+
+### Spindown a Model
+
+```bash
+curl -X POST http://localhost:6767/spindown \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": "Qwen/Qwen2.5-7B-Instruct"}'
+```
+
+### List Deployed Models
+
+```bash
+curl http://localhost:6767/models | jq
 ```
 

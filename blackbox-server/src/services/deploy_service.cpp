@@ -37,7 +37,8 @@ void handleDeployRequest(http::request<http::string_body>& req, tcp::socket& soc
         }
     }
     
-    DeployResponse deploy_result = deployHFModel(model_id, hf_token, port);
+    std::string gpu_type = getEnvValue("GPU_TYPE", "");
+    DeployResponse deploy_result = deployHFModel(model_id, hf_token, port, gpu_type);
     
     std::ostringstream json;
     if (deploy_result.success) {

@@ -9,7 +9,9 @@ struct DeployResponse {
     int port;
 };
 
-DeployResponse deployHFModel(const std::string& model_id, const std::string& hf_token = "", int port = 8000);
+DeployResponse deployHFModel(const std::string& model_id, const std::string& hf_token = "", int port = 8000, const std::string& gpu_type = "", const std::string& custom_config_path = "");
 bool validateHFModel(const std::string& model_id, const std::string& hf_token);
-std::string generateDockerCommand(const std::string& model_id, const std::string& hf_token, int port);
+std::string generateDockerCommand(const std::string& model_id, const std::string& hf_token, int port, const std::string& config_path);
+double getMaxGPUUtilizationFromConfig(const std::string& config_path);
+std::string getConfigPathForGPU(const std::string& gpu_type);
 
