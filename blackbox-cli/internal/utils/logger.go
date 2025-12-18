@@ -59,3 +59,4 @@ func Error(msg string, args ...interface{}) {
 	log("ERROR", msg, args...)
 }
 
+

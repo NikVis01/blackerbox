@@ -150,8 +150,14 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
     unsigned int total_allocated_blocks = 0;
     unsigned int total_utilized_blocks = 0;
     
-    // Get deployed models to match processes to containers
-    auto deployed_models = listDeployedModels();
+    // Get deployed models to match processes to containers (only running ones)
+    auto all_deployed_models = listDeployedModels();
+    std::vector<DeployedModel> deployed_models;
+    for (const auto& model : all_deployed_models) {
+        if (model.running) {
+            deployed_models.push_back(model);
+        }
+    }
     
     // Create a map of model_id -> process memory for block size calculation
     // Match processes to models by checking which container they belong to
@@ -209,6 +215,10 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
         model_info.port = model_data.port;
         model_info.allocated_vram_bytes = 0;
         model_info.used_kv_cache_bytes = 0;
+        
+        LOG_DEBUG("Processing model " + model_data.model_id + ": available=" + (model_data.available ? "true" : "false") + 
+                 ", num_gpu_blocks=" + std::to_string(model_data.num_gpu_blocks) +
+                 ", port=" + std::to_string(model_data.port));
         
         if (model_data.available && model_data.num_gpu_blocks > 0) {
             // Calculate block size for this model

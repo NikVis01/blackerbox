@@ -58,7 +58,8 @@ std::vector<DeployedModel> listDeployedModels() {
     std::vector<DeployedModel> models;
     
     std::string docker_cmd = getDockerCmd();
-    std::string docker_list_cmd = absl::StrCat("timeout 5 ", docker_cmd, " ps -a --filter name=vllm- --format '{{.ID}}|{{.Names}}|{{.Status}}|{{.Ports}}' 2>/dev/null");
+    // Only query running containers - explicitly filter for running status
+    std::string docker_list_cmd = absl::StrCat("timeout 5 ", docker_cmd, " ps --filter name=vllm- --filter status=running --format '{{.ID}}|{{.Names}}|{{.Status}}|{{.Ports}}' 2>/dev/null");
     FILE* pipe = popen(docker_list_cmd.c_str(), "r");
     if (!pipe) return models;
     
@@ -88,14 +89,51 @@ std::vector<DeployedModel> listDeployedModels() {
         std::string model_id = name.substr(5);
         
         int port = 8000;
-        size_t port_pos = ports.find(":8000");
-        if (port_pos != std::string::npos) {
-            size_t start = ports.rfind(":", port_pos - 1);
-            if (start != std::string::npos) {
+        // Parse port from Docker format: "0.0.0.0:8001->8000/tcp" or "8001/tcp" or ":8001->8000/tcp"
+        // Look for pattern: host_port->container_port/tcp
+        size_t arrow_pos = ports.find("->");
+        if (arrow_pos != std::string::npos) {
+            // Format: host:port->container/tcp
+            size_t colon_pos = ports.rfind(":", arrow_pos);
+            if (colon_pos != std::string::npos) {
+                size_t port_start = colon_pos + 1;
+                size_t port_end = arrow_pos;
                 try {
-                    port = std::stoi(ports.substr(start + 1, port_pos - start - 1));
+                    port = std::stoi(ports.substr(port_start, port_end - port_start));
                 } catch (...) {}
             }
+        } else {
+            // Fallback: look for any port number pattern
+            size_t colon_pos = ports.find(":");
+            if (colon_pos != std::string::npos) {
+                size_t port_start = colon_pos + 1;
+                size_t port_end = ports.find_first_of("/->", port_start);
+                if (port_end == std::string::npos) port_end = ports.length();
+                try {
+                    port = std::stoi(ports.substr(port_start, port_end - port_start));
+                } catch (...) {}
+            }
+        }
+        
+        // Verify the container is actually running with docker inspect
+        std::string inspect_cmd = absl::StrCat("timeout 2 ", docker_cmd, " inspect --format '{{.State.Running}}' ", container_id, " 2>/dev/null");
+        FILE* inspect_pipe = popen(inspect_cmd.c_str(), "r");
+        bool is_actually_running = false;
+        if (inspect_pipe) {
+            char inspect_buffer[16];
+            if (fgets(inspect_buffer, sizeof(inspect_buffer), inspect_pipe)) {
+                std::string running_state(inspect_buffer);
+                running_state.erase(0, running_state.find_first_not_of(" \t\n\r"));
+                running_state.erase(running_state.find_last_not_of(" \t\n\r") + 1);
+                is_actually_running = (running_state == "true");
+            }
+            pclose(inspect_pipe);
+        }
+        
+        // Only add if actually running
+        if (!is_actually_running) {
+            LOG_DEBUG("Skipping non-running container: " + name + " (status: " + status + ")");
+            continue;
         }
         
         DeployedModel model;
@@ -103,33 +141,7 @@ std::vector<DeployedModel> listDeployedModels() {
         model.container_id = container_id;
         model.container_name = name;
         model.port = port;
-        
-        // Actually verify the container is running by checking its state
-        // Don't just trust the status string - verify with docker inspect
-        bool is_actually_running = false;
-        if (status.length() >= 2 && status.substr(0, 2) == "Up") {
-            // Double-check by inspecting the container's actual state (with timeout)
-            std::string inspect_cmd = absl::StrCat("timeout 2 ", docker_cmd, " inspect --format '{{.State.Running}}' ", container_id, " 2>/dev/null");
-            FILE* inspect_pipe = popen(inspect_cmd.c_str(), "r");
-            if (inspect_pipe) {
-                char inspect_buffer[16];
-                if (fgets(inspect_buffer, sizeof(inspect_buffer), inspect_pipe)) {
-                    std::string running_state(inspect_buffer);
-                    running_state.erase(0, running_state.find_first_not_of(" \t\n\r"));
-                    running_state.erase(running_state.find_last_not_of(" \t\n\r") + 1);
-                    is_actually_running = (running_state == "true");
-                }
-                pclose(inspect_pipe);
-            }
-            
-            // Skip health check to avoid blocking - container state is sufficient
-            // Health check can be slow and cause timeouts
-        }
-        
-        model.running = is_actually_running;
-        
-        // Log status for debugging
-        LOG_DEBUG("Container " + name + " - Status: '" + status + "', Actually Running: " + (model.running ? "true" : "false"));
+        model.running = true;
         
         models.push_back(model);
     }
@@ -258,7 +270,30 @@ void unregisterModel(const std::string& container_name) {
     model_metrics.erase(container_name);
 }
 
+// Clean up model_metrics for containers that no longer exist or aren't running
+static void cleanupStaleModelMetrics() {
+    auto running_models = listDeployedModels();
+    std::set<std::string> running_container_names;
+    for (const auto& model : running_models) {
+        running_container_names.insert(model.container_name);
+    }
+    
+    // Remove metrics for containers that are no longer running
+    auto it = model_metrics.begin();
+    while (it != model_metrics.end()) {
+        if (running_container_names.find(it->first) == running_container_names.end()) {
+            LOG_DEBUG("Removing stale metrics for non-running container: " + it->first);
+            it = model_metrics.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void updateModelVRAMUsage(const std::string& container_name, double vram_percent) {
+    // Clean up stale metrics before updating
+    cleanupStaleModelMetrics();
+    
     if (model_metrics.find(container_name) == model_metrics.end()) return;
     
     auto& metrics = model_metrics[container_name];
@@ -277,6 +312,10 @@ OptimizationResult optimizeModelAllocations() {
     OptimizationResult result{false, {}, ""};
     std::vector<std::string> to_restart;
     
+    // Clean up stale metrics first
+    cleanupStaleModelMetrics();
+    
+    // Now iterate only over running models
     for (const auto& [container_name, metrics] : model_metrics) {
         if (metrics.vram_samples.size() < 10) continue;
         
@@ -301,16 +340,15 @@ OptimizationResult optimizeModelAllocations() {
 }
 
 void checkVLLMHealth() {
+    // Clean up stale metrics first
+    cleanupStaleModelMetrics();
+    
     auto models = listDeployedModels();
     if (models.empty()) {
         return;
     }
     
     for (const auto& model : models) {
-        if (!model.running) {
-            LOG_DEBUG("Skipping health check for " + model.model_id + " (not running)");
-            continue;
-        }
         
         // Check /health endpoint
         std::string health_cmd = absl::StrCat(

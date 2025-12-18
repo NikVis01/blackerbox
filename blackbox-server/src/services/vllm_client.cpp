@@ -12,8 +12,15 @@
 VLLMBlockData fetchVLLMBlockData() {
     VLLMBlockData data{0, 0, 0.0, 0.0, false};
     
-    // Get all deployed models and aggregate metrics from all running ones
-    auto models = listDeployedModels();
+    // Get all deployed models and filter to only running ones
+    auto all_models = listDeployedModels();
+    std::vector<DeployedModel> models;
+    for (const auto& model : all_models) {
+        if (model.running) {
+            models.push_back(model);
+        }
+    }
+    
     unsigned long long total_blocks = 0;
     unsigned long long total_block_size = 0;
     double total_kv_usage = 0.0;
@@ -21,7 +28,6 @@ VLLMBlockData fetchVLLMBlockData() {
     int active_models = 0;
     
     for (const auto& model : models) {
-        if (!model.running) continue;
         
         // Use timeout wrapper to ensure curl doesn't hang
         // Try to get host from environment, default to localhost
@@ -65,23 +71,25 @@ VLLMBlockData fetchVLLMBlockData() {
             }
             
             // Parse kv_cache_usage_perc - format: vllm:kv_cache_usage_perc{...} value
-            if (line_str.find("vllm:kv_cache_usage_perc") != std::string::npos && line_str[0] != '#') {
-                size_t brace = line_str.find_last_of('}');
-                if (brace != std::string::npos && brace + 1 < line_str.length()) {
-                    std::string value_str = line_str.substr(brace + 1);
-                    // Trim whitespace
-                    size_t start = value_str.find_first_not_of(" \t\r\n");
-                    if (start != std::string::npos) {
-                        size_t end = value_str.find_last_not_of(" \t\r\n");
-                        value_str = value_str.substr(start, end - start + 1);
-                        try {
-                            model_kv_usage = std::stod(value_str);
-                            if (model_kv_usage < 0.0) model_kv_usage = 0.0;
-                            if (model_kv_usage > 1.0) model_kv_usage = 1.0;
-                            LOG_DEBUG("Parsed kv_cache_usage_perc=" + std::to_string(model_kv_usage) + " for model on port " + std::to_string(model.port));
-                        } catch (...) {
-                            model_kv_usage = 0.0;
-                            LOG_DEBUG("Failed to parse kv_cache_usage_perc, using 0.0");
+            size_t kv_usage_pos = line_str.find("vllm:kv_cache_usage_perc");
+            if (kv_usage_pos != std::string::npos && line_str[0] != '#') {
+                size_t brace_end = line_str.find("}", kv_usage_pos);
+                if (brace_end != std::string::npos) {
+                    size_t value_start = line_str.find_first_not_of(" \t", brace_end + 1);
+                    if (value_start != std::string::npos) {
+                        size_t value_end = line_str.find_first_of(" \n\r", value_start);
+                        if (value_end == std::string::npos) {
+                            value_end = line_str.length();
+                        }
+                        if (value_end > value_start) {
+                            std::string value_str = line_str.substr(value_start, value_end - value_start);
+                            try {
+                                model_kv_usage = std::stod(value_str);
+                                if (model_kv_usage < 0.0) model_kv_usage = 0.0;
+                                if (model_kv_usage > 1.0) model_kv_usage = 1.0;
+                            } catch (...) {
+                                model_kv_usage = 0.0;
+                            }
                         }
                     }
                 }
@@ -202,11 +210,18 @@ VLLMBlockData fetchVLLMBlockData() {
 std::vector<ModelBlockData> fetchPerModelBlockData() {
     std::vector<ModelBlockData> models_data;
     
-    // Get all deployed models and fetch metrics from each running one
-    auto models = listDeployedModels();
+    // Get all deployed models and filter to only running ones
+    auto all_models = listDeployedModels();
+    std::vector<DeployedModel> models;
+    for (const auto& model : all_models) {
+        if (model.running) {
+            models.push_back(model);
+        }
+    }
+    LOG_DEBUG("fetchPerModelBlockData: Found " + std::to_string(all_models.size()) + " total models, " + std::to_string(models.size()) + " running");
     
     for (const auto& model : models) {
-        if (!model.running) continue;
+        LOG_DEBUG("Fetching metrics for model " + model.model_id + " on port " + std::to_string(model.port));
         
         ModelBlockData model_data;
         model_data.model_id = model.model_id;
@@ -228,11 +243,14 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
         
         FILE* curl = popen(cmd.str().c_str(), "r");
         if (!curl) {
+            LOG_DEBUG("Failed to open curl pipe for model " + model.model_id);
             models_data.push_back(model_data);
             continue;
         }
         
+        LOG_DEBUG("Fetching metrics from http://" + vllm_host + ":" + std::to_string(model.port) + "/metrics");
         char line[4096];
+        int line_count = 0;
         unsigned long long model_blocks = 0;
         double model_kv_usage = 0.0;
         double model_prefix_hit_rate = 0.0;
@@ -240,12 +258,15 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
         unsigned long long cache_query_hit = 0;
         unsigned int requests_running = 0;
         unsigned int requests_waiting = 0;
+        bool found_cache_config = false;
         
         while (fgets(line, sizeof(line), curl)) {
+            line_count++;
             std::string line_str(line);
             
             size_t pos = line_str.find("vllm:cache_config_info");
             if (pos != std::string::npos) {
+                found_cache_config = true;
                 size_t num_blocks_pos = line_str.find("num_gpu_blocks=\"", pos);
                 if (num_blocks_pos != std::string::npos) {
                     num_blocks_pos += 16;
@@ -264,23 +285,25 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
             }
             
             // Parse kv_cache_usage_perc - format: vllm:kv_cache_usage_perc{...} value
-            if (line_str.find("vllm:kv_cache_usage_perc") != std::string::npos && line_str[0] != '#') {
-                size_t brace = line_str.find_last_of('}');
-                if (brace != std::string::npos && brace + 1 < line_str.length()) {
-                    std::string value_str = line_str.substr(brace + 1);
-                    // Trim whitespace
-                    size_t start = value_str.find_first_not_of(" \t\r\n");
-                    if (start != std::string::npos) {
-                        size_t end = value_str.find_last_not_of(" \t\r\n");
-                        value_str = value_str.substr(start, end - start + 1);
-                        try {
-                            model_kv_usage = std::stod(value_str);
-                            if (model_kv_usage < 0.0) model_kv_usage = 0.0;
-                            if (model_kv_usage > 1.0) model_kv_usage = 1.0;
-                            LOG_DEBUG("Parsed kv_cache_usage_perc=" + std::to_string(model_kv_usage) + " for model on port " + std::to_string(model.port));
-                        } catch (...) {
-                            model_kv_usage = 0.0;
-                            LOG_DEBUG("Failed to parse kv_cache_usage_perc, using 0.0");
+            size_t kv_usage_pos = line_str.find("vllm:kv_cache_usage_perc");
+            if (kv_usage_pos != std::string::npos && line_str[0] != '#') {
+                size_t brace_end = line_str.find("}", kv_usage_pos);
+                if (brace_end != std::string::npos) {
+                    size_t value_start = line_str.find_first_not_of(" \t", brace_end + 1);
+                    if (value_start != std::string::npos) {
+                        size_t value_end = line_str.find_first_of(" \n\r", value_start);
+                        if (value_end == std::string::npos) {
+                            value_end = line_str.length();
+                        }
+                        if (value_end > value_start) {
+                            std::string value_str = line_str.substr(value_start, value_end - value_start);
+                            try {
+                                model_kv_usage = std::stod(value_str);
+                                if (model_kv_usage < 0.0) model_kv_usage = 0.0;
+                                if (model_kv_usage > 1.0) model_kv_usage = 1.0;
+                            } catch (...) {
+                                model_kv_usage = 0.0;
+                            }
                         }
                     }
                 }
@@ -363,7 +386,12 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
             }
         }
         
-        pclose(curl);
+        int curl_status = pclose(curl);
+        LOG_DEBUG("Model " + model.model_id + ": curl returned " + std::to_string(curl_status) + 
+                 ", read " + std::to_string(line_count) + " lines" +
+                 ", found_cache_config=" + (found_cache_config ? "true" : "false") +
+                 ", model_blocks=" + std::to_string(model_blocks) +
+                 ", kv_usage=" + std::to_string(model_kv_usage));
         
         // Calculate hit rate from counters
         if (cache_query_total > 0) {
@@ -381,6 +409,12 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
             model_data.num_requests_running = requests_running;
             model_data.num_requests_waiting = requests_waiting;
             model_data.available = true;
+            LOG_DEBUG("Model " + model.model_id + " metrics: blocks=" + std::to_string(model_blocks) +
+                     ", kv_usage=" + std::to_string(model_kv_usage) +
+                     ", prefix_hit_rate=" + std::to_string(model_prefix_hit_rate));
+        } else {
+            LOG_DEBUG("Model " + model.model_id + " has 0 blocks (line_count=" + std::to_string(line_count) + 
+                     "), marking as unavailable");
         }
         
         models_data.push_back(model_data);

@@ -107,9 +107,15 @@ AggregatedVRAMInfo collectAggregatedMetrics(unsigned int window_seconds) {
     result.num_requests_running = calculateStats(requests_running_samples);
     result.num_requests_waiting = calculateStats(requests_waiting_samples);
     
-    // Get final snapshot to extract actual model data
+    // Get final snapshot to extract actual model data (only running models)
     DetailedVRAMInfo final_info = getDetailedVRAMUsage();
-    result.models = final_info.models;
+    result.models.clear();
+    for (const auto& model : final_info.models) {
+        // Only include models that have allocated VRAM (running models)
+        if (model.allocated_vram_bytes > 0) {
+            result.models.push_back(model);
+        }
+    }
     
     return result;
 }
