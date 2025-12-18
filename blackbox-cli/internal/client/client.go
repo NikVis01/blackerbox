@@ -70,6 +70,50 @@ func (c *Client) Snapshot(ctx context.Context) (*model.Snapshot, error) {
 	return &snap, nil
 }
 
+func (c *Client) AggregatedSnapshot(ctx context.Context, windowSeconds int) (*model.AggregatedSnapshot, error) {
+	baseURL := c.baseURL
+	if strings.HasPrefix(baseURL, "http:/") && !strings.HasPrefix(baseURL, "http://") {
+		baseURL = strings.Replace(baseURL, "http:/", "http://", 1)
+	}
+	if strings.HasPrefix(baseURL, "https:/") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = strings.Replace(baseURL, "https:/", "https://", 1)
+	}
+
+	aggURL := baseURL + "/vram/aggregated"
+	if windowSeconds > 0 {
+		aggURL += fmt.Sprintf("?window=%d", windowSeconds)
+	}
+
+	if _, err := url.Parse(aggURL); err != nil {
+		return nil, fmt.Errorf("invalid URL %q: %w", aggURL, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, aggURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("server returned %s", resp.Status)
+	}
+
+	var aggSnap model.AggregatedSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&aggSnap); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("request timeout: %w", ctx.Err())
+		}
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &aggSnap, nil
+}
+
 func (c *Client) Stream(ctx context.Context, onSnapshot func(*model.Snapshot) error) error {
 	streamURL := c.baseURL + "/vram/stream"
 	if strings.HasPrefix(streamURL, "http:/") && !strings.HasPrefix(streamURL, "http://") {

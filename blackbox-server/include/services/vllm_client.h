@@ -11,6 +11,8 @@ struct ModelBlockData {
     unsigned long long block_size;
     double kv_cache_usage_perc;
     double prefix_cache_hit_rate;
+    unsigned int num_requests_running;
+    unsigned int num_requests_waiting;
     bool available;
 };
 

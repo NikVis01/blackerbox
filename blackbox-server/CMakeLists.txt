@@ -142,6 +142,7 @@ add_executable(blackbox-server
     src/services/spindown_service.cpp
     src/services/vram_tracker.cpp
     src/services/optimization_service.cpp
+    src/services/aggregation_service.cpp
     src/utils/json_serializer.cpp
     src/utils/json_parser.cpp
     src/utils/env_utils.cpp

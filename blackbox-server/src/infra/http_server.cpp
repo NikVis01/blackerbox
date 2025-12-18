@@ -1,5 +1,6 @@
 #include "infra/http_server.h"
 #include "services/nvml_utils.h"
+#include "services/aggregation_service.h"
 #include "utils/json_serializer.h"
 #include "utils/logger.h"
 #include "services/deploy_service.h"
@@ -15,6 +16,7 @@
 #include <thread>
 #include <sstream>
 #include <string>
+#include <regex>
 
 void handleStreamingRequest(tcp::socket& socket) {
     LOG_DEBUG("handleStreamingRequest: Entering function");
@@ -150,6 +152,51 @@ void handleRequest(http::request<http::string_body>& req, tcp::socket& socket) {
                     ec == boost::asio::error::connection_reset ||
                     ec == boost::asio::error::eof) {
                     LOG_DEBUG("Client disconnected during VRAM response");
+                    return;
+                }
+                throw;
+            }
+            return;
+        } else if (target.find("/vram/aggregated") == 0) {
+            unsigned int window_seconds = 5;
+            std::regex window_regex(R"(window=(\d+))");
+            std::smatch match;
+            std::string query = std::string(req.target());
+            size_t query_pos = query.find('?');
+            if (query_pos != std::string::npos) {
+                std::string query_str = query.substr(query_pos + 1);
+                if (std::regex_search(query_str, match, window_regex)) {
+                    try {
+                        window_seconds = std::stoi(match[1].str());
+                        if (window_seconds < 1) window_seconds = 1;
+                        if (window_seconds > 60) window_seconds = 60;
+                    } catch (...) {
+                        window_seconds = 5;
+                    }
+                }
+            }
+            
+            LOG_DEBUG("Collecting aggregated metrics for " + std::to_string(window_seconds) + " seconds");
+            AggregatedVRAMInfo info = collectAggregatedMetrics(window_seconds);
+            std::string json = createAggregatedResponse(info);
+            
+            http::response<http::string_body> res;
+            res.version(req.version());
+            res.keep_alive(req.keep_alive());
+            res.result(http::status::ok);
+            res.set(http::field::content_type, "application/json");
+            res.body() = json;
+            res.prepare_payload();
+            
+            try {
+                http::write(socket, res);
+                LOG_DEBUG("Aggregated VRAM response sent (" + std::to_string(json.length()) + " bytes)");
+            } catch (const boost::system::system_error& e) {
+                auto ec = e.code();
+                if (ec == boost::asio::error::broken_pipe || 
+                    ec == boost::asio::error::connection_reset ||
+                    ec == boost::asio::error::eof) {
+                    LOG_DEBUG("Client disconnected during aggregated VRAM response");
                     return;
                 }
                 throw;

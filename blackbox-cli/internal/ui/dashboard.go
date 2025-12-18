@@ -145,19 +145,41 @@ func fetchSnapshot(c *client.Client, timeout time.Duration, endpointID int, fetc
 
 func startPolling(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		s, err := c.Snapshot(ctx)
-		return streamMsg{s: s, err: err, endpointID: endpointID}
+		aggSnap, err := c.AggregatedSnapshot(ctx, 5)
+		if err != nil {
+			return streamMsg{s: nil, err: err, endpointID: endpointID}
+		}
+		// Convert aggregated snapshot to regular snapshot using average values
+		s := &model.Snapshot{
+			TotalVRAMBytes:     aggSnap.TotalVRAMBytes,
+			AllocatedVRAMBytes:  int64(aggSnap.AllocatedVRAMBytes.Avg),
+			UsedKVCacheBytes:    int64(aggSnap.UsedKVCacheBytes.Avg),
+			PrefixCacheHitRate:  aggSnap.PrefixCacheHitRate.Avg,
+			Models:              aggSnap.Models,
+		}
+		return streamMsg{s: s, err: nil, endpointID: endpointID}
 	}
 }
 
 func scheduleNextPoll(c *client.Client, endpointID int) tea.Cmd {
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		s, err := c.Snapshot(ctx)
-		return streamMsg{s: s, err: err, endpointID: endpointID}
+		aggSnap, err := c.AggregatedSnapshot(ctx, 5)
+		if err != nil {
+			return streamMsg{s: nil, err: err, endpointID: endpointID}
+		}
+		// Convert aggregated snapshot to regular snapshot using average values
+		s := &model.Snapshot{
+			TotalVRAMBytes:     aggSnap.TotalVRAMBytes,
+			AllocatedVRAMBytes:  int64(aggSnap.AllocatedVRAMBytes.Avg),
+			UsedKVCacheBytes:    int64(aggSnap.UsedKVCacheBytes.Avg),
+			PrefixCacheHitRate:  aggSnap.PrefixCacheHitRate.Avg,
+			Models:              aggSnap.Models,
+		}
+		return streamMsg{s: s, err: nil, endpointID: endpointID}
 	})
 }
 

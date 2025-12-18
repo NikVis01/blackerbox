@@ -73,3 +73,24 @@ struct VLLMBlockData {
     bool available;
 };
 
+struct AggregatedStats {
+    double min;
+    double max;
+    double avg;
+    double p95;
+    double p99;
+    unsigned int count;
+};
+
+struct AggregatedVRAMInfo {
+    unsigned long long total_vram_bytes;
+    AggregatedStats allocated_vram_bytes;
+    AggregatedStats used_kv_cache_bytes;
+    AggregatedStats prefix_cache_hit_rate;
+    AggregatedStats num_requests_running;
+    AggregatedStats num_requests_waiting;
+    std::vector<ModelVRAMInfo> models;
+    unsigned long long window_seconds;
+    unsigned int sample_count;
+};
+

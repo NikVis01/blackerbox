@@ -15,3 +15,26 @@ type ModelInfo struct {
 	AllocatedVRAMBytes int64  `json:"allocated_vram_bytes"`
 	UsedKVCacheBytes   int64  `json:"used_kv_cache_bytes"`
 }
+
+// AggregatedStats represents statistical aggregation over a time window
+type AggregatedStats struct {
+	Min   float64 `json:"min"`
+	Max   float64 `json:"max"`
+	Avg   float64 `json:"avg"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	Count int     `json:"count"`
+}
+
+// AggregatedSnapshot from blackbox-server /vram/aggregated endpoint
+type AggregatedSnapshot struct {
+	TotalVRAMBytes      int64                    `json:"total_vram_bytes"`
+	WindowSeconds       int                      `json:"window_seconds"`
+	SampleCount         int                      `json:"sample_count"`
+	AllocatedVRAMBytes  AggregatedStats          `json:"allocated_vram_bytes"`
+	UsedKVCacheBytes    AggregatedStats          `json:"used_kv_cache_bytes"`
+	PrefixCacheHitRate  AggregatedStats          `json:"prefix_cache_hit_rate"`
+	NumRequestsRunning  AggregatedStats          `json:"num_requests_running"`
+	NumRequestsWaiting  AggregatedStats          `json:"num_requests_waiting"`
+	Models              []ModelInfo              `json:"models"`
+}

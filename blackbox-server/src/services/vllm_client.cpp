@@ -38,6 +38,8 @@ VLLMBlockData fetchVLLMBlockData() {
         double model_prefix_hit_rate = 0.0;
         unsigned long long cache_query_total = 0;
         unsigned long long cache_query_hit = 0;
+        unsigned int requests_running = 0;
+        unsigned int requests_waiting = 0;
         
         while (fgets(line, sizeof(line), curl)) {
             std::string line_str(line);
@@ -115,6 +117,44 @@ VLLMBlockData fetchVLLMBlockData() {
                             cache_query_hit = std::stoull(value_str);
                         } catch (...) {
                             cache_query_hit = 0;
+                        }
+                    }
+                }
+            }
+            
+            // Parse num_requests_running - format: vllm:num_requests_running{...} value
+            if (line_str.find("vllm:num_requests_running") != std::string::npos && line_str[0] != '#') {
+                size_t brace = line_str.find_last_of('}');
+                if (brace != std::string::npos && brace + 1 < line_str.length()) {
+                    std::string value_str = line_str.substr(brace + 1);
+                    size_t start = value_str.find_first_not_of(" \t\r\n");
+                    if (start != std::string::npos) {
+                        size_t end = value_str.find_last_not_of(" \t\r\n");
+                        value_str = value_str.substr(start, end - start + 1);
+                        try {
+                            double val = std::stod(value_str);
+                            requests_running = static_cast<unsigned int>(val);
+                        } catch (...) {
+                            requests_running = 0;
+                        }
+                    }
+                }
+            }
+            
+            // Parse num_requests_waiting - format: vllm:num_requests_waiting{...} value
+            if (line_str.find("vllm:num_requests_waiting") != std::string::npos && line_str[0] != '#') {
+                size_t brace = line_str.find_last_of('}');
+                if (brace != std::string::npos && brace + 1 < line_str.length()) {
+                    std::string value_str = line_str.substr(brace + 1);
+                    size_t start = value_str.find_first_not_of(" \t\r\n");
+                    if (start != std::string::npos) {
+                        size_t end = value_str.find_last_not_of(" \t\r\n");
+                        value_str = value_str.substr(start, end - start + 1);
+                        try {
+                            double val = std::stod(value_str);
+                            requests_waiting = static_cast<unsigned int>(val);
+                        } catch (...) {
+                            requests_waiting = 0;
                         }
                     }
                 }
@@ -172,6 +212,8 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
         model_data.block_size = 0;
         model_data.kv_cache_usage_perc = 0.0;
         model_data.prefix_cache_hit_rate = 0.0;
+        model_data.num_requests_running = 0;
+        model_data.num_requests_waiting = 0;
         model_data.available = false;
         
         // Use timeout wrapper to ensure curl doesn't hang
@@ -193,6 +235,8 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
         double model_prefix_hit_rate = 0.0;
         unsigned long long cache_query_total = 0;
         unsigned long long cache_query_hit = 0;
+        unsigned int requests_running = 0;
+        unsigned int requests_waiting = 0;
         
         while (fgets(line, sizeof(line), curl)) {
             std::string line_str(line);
@@ -274,6 +318,44 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
                     }
                 }
             }
+            
+            // Parse num_requests_running - format: vllm:num_requests_running{...} value
+            if (line_str.find("vllm:num_requests_running") != std::string::npos && line_str[0] != '#') {
+                size_t brace = line_str.find_last_of('}');
+                if (brace != std::string::npos && brace + 1 < line_str.length()) {
+                    std::string value_str = line_str.substr(brace + 1);
+                    size_t start = value_str.find_first_not_of(" \t\r\n");
+                    if (start != std::string::npos) {
+                        size_t end = value_str.find_last_not_of(" \t\r\n");
+                        value_str = value_str.substr(start, end - start + 1);
+                        try {
+                            double val = std::stod(value_str);
+                            requests_running = static_cast<unsigned int>(val);
+                        } catch (...) {
+                            requests_running = 0;
+                        }
+                    }
+                }
+            }
+            
+            // Parse num_requests_waiting - format: vllm:num_requests_waiting{...} value
+            if (line_str.find("vllm:num_requests_waiting") != std::string::npos && line_str[0] != '#') {
+                size_t brace = line_str.find_last_of('}');
+                if (brace != std::string::npos && brace + 1 < line_str.length()) {
+                    std::string value_str = line_str.substr(brace + 1);
+                    size_t start = value_str.find_first_not_of(" \t\r\n");
+                    if (start != std::string::npos) {
+                        size_t end = value_str.find_last_not_of(" \t\r\n");
+                        value_str = value_str.substr(start, end - start + 1);
+                        try {
+                            double val = std::stod(value_str);
+                            requests_waiting = static_cast<unsigned int>(val);
+                        } catch (...) {
+                            requests_waiting = 0;
+                        }
+                    }
+                }
+            }
         }
         
         pclose(curl);
@@ -291,6 +373,8 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
             model_data.block_size = 16 * 1024; // Default 16KB per block
             model_data.kv_cache_usage_perc = model_kv_usage;
             model_data.prefix_cache_hit_rate = model_prefix_hit_rate;
+            model_data.num_requests_running = requests_running;
+            model_data.num_requests_waiting = requests_waiting;
             model_data.available = true;
         }
         
