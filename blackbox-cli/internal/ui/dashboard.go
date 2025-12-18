@@ -7,6 +7,7 @@ import (
 	"github.com/maxdcmn/blackbox-cli/internal/client"
 	"github.com/maxdcmn/blackbox-cli/internal/config"
 	"github.com/maxdcmn/blackbox-cli/internal/model"
+	"github.com/maxdcmn/blackbox-cli/internal/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -152,13 +153,26 @@ func startPolling(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
 			return streamMsg{s: nil, err: err, endpointID: endpointID}
 		}
 		// Convert aggregated snapshot to regular snapshot using average values
+		// Calculate total used KV cache from models to ensure consistency
+		var totalUsedKV int64
+		for _, m := range aggSnap.Models {
+			utils.Debug("Model %s: UsedKVCacheBytes=%d, AllocatedVRAMBytes=%d", m.ModelID, m.UsedKVCacheBytes, m.AllocatedVRAMBytes)
+			totalUsedKV += m.UsedKVCacheBytes
+		}
+		utils.Debug("Total from models: %d, Aggregated avg: %.2f, Sample count: %d", totalUsedKV, aggSnap.UsedKVCacheBytes.Avg, aggSnap.UsedKVCacheBytes.Count)
+		// Use the calculated total from models, or fallback to aggregated avg if sum is 0
+		if totalUsedKV == 0 {
+			totalUsedKV = int64(aggSnap.UsedKVCacheBytes.Avg)
+			utils.Debug("Using aggregated avg as fallback: %d", totalUsedKV)
+		}
 		s := &model.Snapshot{
 			TotalVRAMBytes:     aggSnap.TotalVRAMBytes,
 			AllocatedVRAMBytes:  int64(aggSnap.AllocatedVRAMBytes.Avg),
-			UsedKVCacheBytes:    int64(aggSnap.UsedKVCacheBytes.Avg),
+			UsedKVCacheBytes:    totalUsedKV,
 			PrefixCacheHitRate:  aggSnap.PrefixCacheHitRate.Avg,
 			Models:              aggSnap.Models,
 		}
+		utils.Debug("Final snapshot: UsedKVCacheBytes=%d, Models count=%d", s.UsedKVCacheBytes, len(s.Models))
 		return streamMsg{s: s, err: nil, endpointID: endpointID}
 	}
 }
@@ -175,11 +189,14 @@ func scheduleNextPoll(c *client.Client, endpointID int) tea.Cmd {
 		// Calculate total used KV cache from models to ensure consistency
 		var totalUsedKV int64
 		for _, m := range aggSnap.Models {
+			utils.Debug("Model %s: UsedKVCacheBytes=%d, AllocatedVRAMBytes=%d", m.ModelID, m.UsedKVCacheBytes, m.AllocatedVRAMBytes)
 			totalUsedKV += m.UsedKVCacheBytes
 		}
-		// Use the calculated total from models, or fallback to aggregated avg if models are empty
-		if totalUsedKV == 0 && len(aggSnap.Models) == 0 {
+		utils.Debug("Total from models: %d, Aggregated avg: %.2f, Sample count: %d", totalUsedKV, aggSnap.UsedKVCacheBytes.Avg, aggSnap.UsedKVCacheBytes.Count)
+		// Use the calculated total from models, or fallback to aggregated avg if sum is 0
+		if totalUsedKV == 0 {
 			totalUsedKV = int64(aggSnap.UsedKVCacheBytes.Avg)
+			utils.Debug("Using aggregated avg as fallback: %d", totalUsedKV)
 		}
 		s := &model.Snapshot{
 			TotalVRAMBytes:     aggSnap.TotalVRAMBytes,
@@ -188,6 +205,7 @@ func scheduleNextPoll(c *client.Client, endpointID int) tea.Cmd {
 			PrefixCacheHitRate:  aggSnap.PrefixCacheHitRate.Avg,
 			Models:              aggSnap.Models,
 		}
+		utils.Debug("Final snapshot: UsedKVCacheBytes=%d, Models count=%d", s.UsedKVCacheBytes, len(s.Models))
 		return streamMsg{s: s, err: nil, endpointID: endpointID}
 	})
 }

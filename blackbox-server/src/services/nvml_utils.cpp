@@ -2,6 +2,7 @@
 #include "services/vllm_client.h"
 #include "services/nsight_utils.h"
 #include "services/model_manager.h"
+#include "utils/logger.h"
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -236,15 +237,25 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
                 model_data.num_gpu_blocks * calculated_block_size * model_data.kv_cache_usage_perc
             );
             
+            LOG_DEBUG("Model " + model_data.model_id + ": num_blocks=" + std::to_string(model_data.num_gpu_blocks) +
+                     ", block_size=" + std::to_string(calculated_block_size) +
+                     ", kv_cache_usage_perc=" + std::to_string(model_data.kv_cache_usage_perc) +
+                     ", calculated_used_kv_bytes=" + std::to_string(model_used_kv_bytes) +
+                     ", model_allocated_vram=" + std::to_string(model_allocated_vram));
+            
             // Ensure used KV cache never exceeds allocated VRAM
             if (model_allocated_vram > 0) {
                 model_used_kv_bytes = std::min(model_used_kv_bytes, model_allocated_vram);
+                LOG_DEBUG("Model " + model_data.model_id + ": capped used_kv_bytes to " + std::to_string(model_used_kv_bytes));
             }
             
             total_used_kv_cache_bytes += model_used_kv_bytes;
             
             model_info.allocated_vram_bytes = model_allocated_vram;
             model_info.used_kv_cache_bytes = model_used_kv_bytes;
+            
+            LOG_DEBUG("Model " + model_data.model_id + ": final allocated_vram_bytes=" + std::to_string(model_info.allocated_vram_bytes) +
+                     ", used_kv_cache_bytes=" + std::to_string(model_info.used_kv_cache_bytes));
             
             // Create blocks for this model
             for (unsigned int i = 0; i < model_data.num_gpu_blocks; ++i) {
@@ -281,6 +292,7 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
         (1.0 - (double)detailed.free / detailed.total) : 0.0;
     
     detailed.used_kv_cache_bytes = total_used_kv_cache_bytes;
+    LOG_DEBUG("Total used_kv_cache_bytes: " + std::to_string(total_used_kv_cache_bytes) + ", total_allocated_blocks: " + std::to_string(total_allocated_blocks));
     
     // Calculate average prefix cache hit rate from all models
     double total_prefix_hit_rate = 0.0;
@@ -317,8 +329,10 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
             } else if (!detailed.models.empty()) {
                 // If no KV cache data, distribute evenly among models
                 unsigned long long per_model = remaining_vram / detailed.models.size();
+                LOG_DEBUG("Distributing " + std::to_string(remaining_vram) + " bytes evenly among " + std::to_string(detailed.models.size()) + " models (" + std::to_string(per_model) + " per model)");
                 for (auto& model : detailed.models) {
                     model.allocated_vram_bytes += per_model;
+                    LOG_DEBUG("Model " + model.model_id + ": allocated_vram_bytes now " + std::to_string(model.allocated_vram_bytes) + ", used_kv_cache_bytes=" + std::to_string(model.used_kv_cache_bytes));
                 }
             }
         }

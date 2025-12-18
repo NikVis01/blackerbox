@@ -1,6 +1,7 @@
 #include "services/vllm_client.h"
 #include "services/model_manager.h"
 #include "utils/env_utils.h"
+#include "utils/logger.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
@@ -77,8 +78,10 @@ VLLMBlockData fetchVLLMBlockData() {
                             model_kv_usage = std::stod(value_str);
                             if (model_kv_usage < 0.0) model_kv_usage = 0.0;
                             if (model_kv_usage > 1.0) model_kv_usage = 1.0;
+                            LOG_DEBUG("Parsed kv_cache_usage_perc=" + std::to_string(model_kv_usage) + " for model on port " + std::to_string(model.port));
                         } catch (...) {
                             model_kv_usage = 0.0;
+                            LOG_DEBUG("Failed to parse kv_cache_usage_perc, using 0.0");
                         }
                     }
                 }
@@ -274,8 +277,10 @@ std::vector<ModelBlockData> fetchPerModelBlockData() {
                             model_kv_usage = std::stod(value_str);
                             if (model_kv_usage < 0.0) model_kv_usage = 0.0;
                             if (model_kv_usage > 1.0) model_kv_usage = 1.0;
+                            LOG_DEBUG("Parsed kv_cache_usage_perc=" + std::to_string(model_kv_usage) + " for model on port " + std::to_string(model.port));
                         } catch (...) {
                             model_kv_usage = 0.0;
+                            LOG_DEBUG("Failed to parse kv_cache_usage_perc, using 0.0");
                         }
                     }
                 }

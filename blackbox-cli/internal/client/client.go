@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/maxdcmn/blackbox-cli/internal/model"
+	"github.com/maxdcmn/blackbox-cli/internal/utils"
 )
 
 type Client struct {
@@ -114,6 +115,12 @@ func (c *Client) AggregatedSnapshot(ctx context.Context, windowSeconds int) (*mo
 			return nil, fmt.Errorf("request timeout: %w", ctx.Err())
 		}
 		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	utils.Debug("AggregatedSnapshot received: window=%ds, samples=%d, used_kv_cache_bytes.avg=%.2f, used_kv_cache_bytes.count=%d, models=%d",
+		aggSnap.WindowSeconds, aggSnap.SampleCount, aggSnap.UsedKVCacheBytes.Avg, aggSnap.UsedKVCacheBytes.Count, len(aggSnap.Models))
+	for i, m := range aggSnap.Models {
+		utils.Debug("  Model[%d]: %s, UsedKVCacheBytes=%d, AllocatedVRAMBytes=%d", i, m.ModelID, m.UsedKVCacheBytes, m.AllocatedVRAMBytes)
 	}
 
 	return &aggSnap, nil

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/maxdcmn/blackbox-cli/internal/config"
 	"github.com/maxdcmn/blackbox-cli/internal/ui"
+	"github.com/maxdcmn/blackbox-cli/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +17,8 @@ type rootFlags struct {
 	endpoint string
 	timeout  string
 	interval string
+	debug    bool
+	logFile  string
 }
 
 var rf rootFlags
@@ -26,6 +29,11 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := utils.InitLogger(rf.debug, rf.logFile); err != nil {
+			return fmt.Errorf("failed to init logger: %w", err)
+		}
+		defer utils.CloseLogger()
+
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -61,6 +69,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rf.endpoint, "endpoint", "/vram", "VRAM endpoint path")
 	rootCmd.PersistentFlags().StringVar(&rf.timeout, "timeout", "10s", "HTTP timeout (e.g. 10s, 500ms)")
 	rootCmd.PersistentFlags().StringVar(&rf.interval, "interval", "3s", "polling interval (e.g. 3s, 1s)")
+	rootCmd.PersistentFlags().BoolVar(&rf.debug, "debug", false, "enable debug logging")
+	rootCmd.PersistentFlags().StringVar(&rf.logFile, "log-file", "", "write logs to file (default: stderr)")
 
 	rootCmd.AddCommand(statCmd)
 }
