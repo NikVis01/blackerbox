@@ -8,8 +8,6 @@ import (
 	"github.com/maxdcmn/blackbox-cli/internal/config"
 	"github.com/maxdcmn/blackbox-cli/internal/model"
 
-	"fmt"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -129,7 +127,7 @@ func (m *DashboardModel) Init() tea.Cmd {
 		return nil
 	}
 	m.fetchSequence++
-	return startSSEStream(m.client, m.selected, m.fetchSequence)
+	return startPolling(m.client, m.selected, m.fetchSequence)
 }
 
 func tick(d time.Duration) tea.Cmd {
@@ -145,85 +143,22 @@ func fetchSnapshot(c *client.Client, timeout time.Duration, endpointID int, fetc
 	}
 }
 
-var (
-	streamCtx     context.Context
-	streamCancel  context.CancelFunc
-	streamChan    chan *model.Snapshot
-	streamErrChan chan error
-)
-
-func startSSEStream(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
+func startPolling(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
 	return func() tea.Msg {
-		// Cancel previous stream if it exists
-		if streamCancel != nil {
-			streamCancel()
-		}
-
-		// Create new stream context and channels
-		streamCtx, streamCancel = context.WithCancel(context.Background())
-		streamChan = make(chan *model.Snapshot, 10)
-		streamErrChan = make(chan error, 1)
-
-		go func() {
-			defer func() {
-				if streamCancel != nil {
-					streamCancel()
-				}
-			}()
-			err := c.Stream(streamCtx, func(s *model.Snapshot) error {
-				// Send each snapshot to the channel
-				select {
-				case streamChan <- s:
-				case <-streamCtx.Done():
-					return streamCtx.Err()
-				}
-				return nil
-			})
-			if err != nil && err != context.Canceled {
-				select {
-				case streamErrChan <- err:
-				case <-streamCtx.Done():
-				}
-			}
-		}()
-
-		// Wait for first snapshot or error with timeout
-		select {
-		case s := <-streamChan:
-			// Got a snapshot - return it immediately
-			// The goroutine will continue streaming, and Update will call startSSEStream again
-			return streamMsg{s: s, err: nil, endpointID: endpointID}
-		case err := <-streamErrChan:
-			if streamCancel != nil {
-				streamCancel()
-			}
-			return streamMsg{s: nil, err: err, endpointID: endpointID}
-		case <-time.After(5 * time.Second):
-			// Timeout - cancel and fallback to polling
-			if streamCancel != nil {
-				streamCancel()
-			}
-			return streamMsg{s: nil, err: fmt.Errorf("SSE stream timeout"), endpointID: endpointID}
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s, err := c.Snapshot(ctx)
+		return streamMsg{s: s, err: err, endpointID: endpointID}
 	}
 }
 
-func readNextStreamSnapshot(endpointID int) tea.Cmd {
-	return func() tea.Msg {
-		if streamChan == nil {
-			return streamMsg{s: nil, err: fmt.Errorf("stream not initialized"), endpointID: endpointID}
-		}
-
-		// Wait for next snapshot from the ongoing stream
-		select {
-		case s := <-streamChan:
-			return streamMsg{s: s, err: nil, endpointID: endpointID}
-		case err := <-streamErrChan:
-			return streamMsg{s: nil, err: err, endpointID: endpointID}
-		case <-time.After(10 * time.Second):
-			return streamMsg{s: nil, err: fmt.Errorf("stream read timeout"), endpointID: endpointID}
-		}
-	}
+func scheduleNextPoll(c *client.Client, endpointID int) tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s, err := c.Snapshot(ctx)
+		return streamMsg{s: s, err: err, endpointID: endpointID}
+	})
 }
 
 func (m *DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -281,17 +216,9 @@ func (m *DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastErr = msg.err
 		if msg.err == nil && msg.s != nil {
 			m.updateHistory(msg.s)
-			// Continue reading from the ongoing stream
-			return m, readNextStreamSnapshot(m.selected)
-		} else if msg.err != nil {
-			// On error, cancel stream and fallback to polling with interval
-			if streamCancel != nil {
-				streamCancel()
-			}
-			return m, tea.Batch(fetchSnapshot(m.client, m.timeout, m.selected, m.fetchSequence), tick(m.interval))
 		}
-		// Continue reading from stream even if no snapshot
-		return m, readNextStreamSnapshot(m.selected)
+		// Schedule next poll in 5 seconds
+		return m, scheduleNextPoll(m.client, m.selected)
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -380,7 +307,7 @@ func (m *DashboardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				if len(m.endpoints) > 0 {
 					m.selectEndpoint(m.selected)
-					return m, startSSEStream(m.client, m.selected, m.fetchSequence)
+					return m, startPolling(m.client, m.selected, m.fetchSequence)
 				}
 				m.client = nil
 			}
@@ -390,7 +317,7 @@ func (m *DashboardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loaded = false
 			m.lastErr = nil
 			m.fetchSequence++
-			return m, startSSEStream(m.client, m.selected, m.fetchSequence)
+			return m, startPolling(m.client, m.selected, m.fetchSequence)
 		}
 	case "D":
 		// Deploy model - only if we have an endpoint selected
@@ -462,7 +389,7 @@ func (m *DashboardModel) handleDown() (tea.Model, tea.Cmd) {
 		}
 	} else if m.focusedPanel == 0 && m.selected < len(m.endpoints)-1 {
 		m.selectEndpoint(m.selected + 1)
-		return m, startSSEStream(m.client, m.selected, m.fetchSequence)
+		return m, startPolling(m.client, m.selected, m.fetchSequence)
 	}
 	return m, nil
 }
@@ -475,7 +402,7 @@ func (m *DashboardModel) handleUp() (tea.Model, tea.Cmd) {
 		}
 	} else if m.focusedPanel == 0 && m.selected > 0 {
 		m.selectEndpoint(m.selected - 1)
-		return m, startSSEStream(m.client, m.selected, m.fetchSequence)
+		return m, startPolling(m.client, m.selected, m.fetchSequence)
 	}
 	return m, nil
 }
