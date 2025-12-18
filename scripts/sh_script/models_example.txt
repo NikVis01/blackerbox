@@ -1,0 +1,22 @@
+# Example HuggingFace models for deployment
+# Remove the # to deploy a model, or add your own models below
+
+# Qwen models
+Qwen/Qwen2.5-7B-Instruct
+# Qwen/Qwen2.5-14B-Instruct
+# Qwen/Qwen2.5-32B-Instruct
+# Qwen/Qwen2.5-72B-Instruct
+
+# Llama models (may require special access)
+# meta-llama/Llama-3.1-8B-Instruct
+# meta-llama/Llama-3.1-70B-Instruct
+
+# Mistral models
+# mistralai/Mistral-7B-Instruct-v0.2
+# mistralai/Mixtral-8x7B-Instruct-v0.1
+
+# Other popular models
+# microsoft/Phi-3-medium-4k-instruct
+# google/gemma-7b-it
+# NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO
+

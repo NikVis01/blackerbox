@@ -1,0 +1,11 @@
+build/
+.env
+.ssh/
+*.pem
+*.pem.pub
+*_key
+*_key.pub
+connect.sh
+hf_token
+**/run_qwen.sh
+**/__pycache__/
