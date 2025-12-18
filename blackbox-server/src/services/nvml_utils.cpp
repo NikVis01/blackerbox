@@ -235,6 +235,12 @@ DetailedVRAMInfo getDetailedVRAMUsage() {
             unsigned long long model_used_kv_bytes = static_cast<unsigned long long>(
                 model_data.num_gpu_blocks * calculated_block_size * model_data.kv_cache_usage_perc
             );
+            
+            // Ensure used KV cache never exceeds allocated VRAM
+            if (model_allocated_vram > 0) {
+                model_used_kv_bytes = std::min(model_used_kv_bytes, model_allocated_vram);
+            }
+            
             total_used_kv_cache_bytes += model_used_kv_bytes;
             
             model_info.allocated_vram_bytes = model_allocated_vram;

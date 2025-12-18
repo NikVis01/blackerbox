@@ -93,7 +93,12 @@ func (c *Client) AggregatedSnapshot(ctx context.Context, windowSeconds int) (*mo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.http.Do(req)
+	// Use a longer timeout for aggregated requests (window + 10 seconds buffer)
+	aggClient := &http.Client{
+		Timeout: time.Duration(windowSeconds+10) * time.Second,
+	}
+
+	resp, err := aggClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

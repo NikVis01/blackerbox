@@ -60,9 +60,11 @@ func (m *DashboardModel) renderMetricsGrid(width, height int, focused bool) stri
 				rows = append(rows, fmt.Sprintf("%s %s",
 					labelStyle.Render("  "+modelName+":"),
 					styleColor(colorItalic).Render(fmt.Sprintf("(port %d)", model.Port))))
-				rows = append(rows, fmt.Sprintf("%s %s / %s",
-					labelStyle.Render("    KV Cache:"),
-					styleColor(colorGreen).Render(fmt.Sprintf("%.2f GB", modelUsedKVCacheGB)),
+				rows = append(rows, fmt.Sprintf("%s %s",
+					labelStyle.Render("    Used KV Cache:"),
+					styleColor(colorGreen).Render(fmt.Sprintf("%.2f GB", modelUsedKVCacheGB))))
+				rows = append(rows, fmt.Sprintf("%s %s",
+					labelStyle.Render("    Allocated VRAM:"),
 					styleColor(colorOrange).Render(fmt.Sprintf("%.2f GB", modelAllocatedGB))))
 			}
 		}

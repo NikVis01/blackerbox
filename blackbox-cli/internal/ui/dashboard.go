@@ -145,7 +145,7 @@ func fetchSnapshot(c *client.Client, timeout time.Duration, endpointID int, fetc
 
 func startPolling(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		aggSnap, err := c.AggregatedSnapshot(ctx, 5)
 		if err != nil {
@@ -165,17 +165,26 @@ func startPolling(c *client.Client, endpointID int, fetchSeq int) tea.Cmd {
 
 func scheduleNextPoll(c *client.Client, endpointID int) tea.Cmd {
 	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		aggSnap, err := c.AggregatedSnapshot(ctx, 5)
 		if err != nil {
 			return streamMsg{s: nil, err: err, endpointID: endpointID}
 		}
 		// Convert aggregated snapshot to regular snapshot using average values
+		// Calculate total used KV cache from models to ensure consistency
+		var totalUsedKV int64
+		for _, m := range aggSnap.Models {
+			totalUsedKV += m.UsedKVCacheBytes
+		}
+		// Use the calculated total from models, or fallback to aggregated avg if models are empty
+		if totalUsedKV == 0 && len(aggSnap.Models) == 0 {
+			totalUsedKV = int64(aggSnap.UsedKVCacheBytes.Avg)
+		}
 		s := &model.Snapshot{
 			TotalVRAMBytes:     aggSnap.TotalVRAMBytes,
 			AllocatedVRAMBytes:  int64(aggSnap.AllocatedVRAMBytes.Avg),
-			UsedKVCacheBytes:    int64(aggSnap.UsedKVCacheBytes.Avg),
+			UsedKVCacheBytes:    totalUsedKV,
 			PrefixCacheHitRate:  aggSnap.PrefixCacheHitRate.Avg,
 			Models:              aggSnap.Models,
 		}

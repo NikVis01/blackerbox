@@ -107,27 +107,9 @@ AggregatedVRAMInfo collectAggregatedMetrics(unsigned int window_seconds) {
     result.num_requests_running = calculateStats(requests_running_samples);
     result.num_requests_waiting = calculateStats(requests_waiting_samples);
     
-    auto models = listDeployedModels();
-    auto models_data = fetchPerModelBlockData();
-    
-    for (const auto& model : models) {
-        if (!model.running) continue;
-        
-        ModelVRAMInfo model_info;
-        model_info.model_id = model.model_id;
-        model_info.port = model.port;
-        
-        for (const auto& md : models_data) {
-            if (md.model_id == model.model_id && md.port == model.port && md.available) {
-                model_info.allocated_vram_bytes = md.num_gpu_blocks * md.block_size;
-                model_info.used_kv_cache_bytes = static_cast<unsigned long long>(
-                    model_info.allocated_vram_bytes * md.kv_cache_usage_perc);
-                break;
-            }
-        }
-        
-        result.models.push_back(model_info);
-    }
+    // Get final snapshot to extract actual model data
+    DetailedVRAMInfo final_info = getDetailedVRAMUsage();
+    result.models = final_info.models;
     
     return result;
 }
